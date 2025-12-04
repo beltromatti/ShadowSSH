@@ -1,0 +1,11 @@
+build/
+.DS_Store
+.vscode/
+*.app/
+*.log
+*.user
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+.shadowssh_history
