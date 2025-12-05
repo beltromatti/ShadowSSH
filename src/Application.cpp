@@ -131,7 +131,7 @@ void Application::Run() {
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Clear In-App Terminal")) {
-                    terminal.Clear();
+                    terminal.ClearScrollback();
                 }
                 if (ImGui::MenuItem("Reset In-App Terminal")) {
                     terminal.Reset();

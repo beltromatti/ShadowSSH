@@ -1,81 +1,80 @@
 #pragma once
 #include "imgui.h"
+#include <vterm.h>
 #include <deque>
 #include <string>
 #include <vector>
 #include <optional>
 
-// Lightweight ANSI-aware terminal view with scrollback and input editing.
+// Terminal wraps libvterm to emulate a modern VT with scrollback and ImGui rendering.
 class Terminal {
 public:
-    Terminal();
+    Terminal(int cols = 100, int rows = 32);
+    ~Terminal();
 
-    // Incoming data from remote shell
+    void Resize(int cols, int rows);
+
+    // Feed remote output into the emulator.
     void Feed(const std::string& data);
 
-    // Clear scrollback and current line
-    void Clear();
-    // Full reset (styles + scrollback)
-    void Reset();
-
-    // Render inside current window.
+    // Render terminal contents inside current ImGui window.
     void Render();
 
-    // Outgoing data typed by the user. Cleared after read.
+    // Bytes to send upstream (keys typed by the user).
     std::string ConsumeOutgoing();
 
+    void Reset();
+    void ClearScrollback();
+
 private:
-    struct Style {
-        ImVec4 fg;
-        ImVec4 bg;
+    struct Cell {
+        uint32_t codepoint = ' ';
+        VTermColor fg;
+        VTermColor bg;
         bool bold = false;
         bool underline = false;
-        bool inverse = false;
-    };
-
-    struct Segment {
-        Style style;
-        std::string text;
+        bool reverse = false;
     };
 
     struct Line {
-        std::vector<Segment> segments;
+        std::vector<Cell> cells;
     };
 
+    VTerm* vt = nullptr;
+    VTermScreen* screen = nullptr;
+    int cols;
+    int rows;
+
     std::deque<Line> scrollback;
-    std::deque<std::string> plain;
-    Line current_line;
-    Style current_style;
-
-    enum class State { Text, Escape, CSI, OSC } state = State::Text;
-    std::string esc_buffer;
-
     size_t max_scrollback = 4000;
 
-    // Input
-    char input_buf[512];
-    std::vector<std::string> history;
-    int history_pos = -1;
     std::string outgoing;
-    bool bracketed_paste = false;
 
     // Selection
     bool selecting = false;
     std::optional<ImVec2> select_start;
     std::optional<ImVec2> select_end;
 
-    // Helpers
-    void push_current_line();
-    void append_char(char c);
-    void backspace();
-    void carriage_return();
-    void apply_sgr(const std::vector<int>& codes);
-    ImVec4 color_from_ansi(int code, bool bright) const;
-    ImVec4 color_from_256(int code) const;
-    std::string strip_bracketed(const std::string& data);
-    std::string get_plain_text(const Line& line) const;
+    // State helpers
+    void init_vterm();
+    static void write_callback(const char* s, size_t len, void* user);
+    static int damage_callback(VTermRect rect, void* user);
+    static int moverect_callback(VTermRect dest, VTermRect src, void* user);
+    static int movecursor_callback(VTermPos pos, VTermPos oldpos, int visible, void* user);
+    static int settermprop_callback(VTermProp prop, VTermValue* val, void* user);
+    static int bell_callback(void* user);
+    static int resize_callback(int rows, int cols, void* user);
+    static int sb_pushline_callback(int cols, const VTermScreenCell* cells, void* user);
+    static int sb_popline_callback(int cols, VTermScreenCell* cells, void* user);
+
+    // Rendering helpers
+    void rebuild_screen(std::vector<Line>& lines_out, std::vector<std::string>& plain_out);
+    ImVec4 color_to_vec(const VTermColor& c) const;
+    std::string cell_text(const Cell& cell) const;
     bool has_selection() const;
     void clear_selection();
     void copy_selection_to_clipboard(const ImVec2& origin, float line_height, const std::vector<std::string>& lines);
     int point_to_col(const std::string& text, float x) const;
+
+    void handle_input();
 };

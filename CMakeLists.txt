@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(ShadowSSH CXX)
+project(ShadowSSH LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,6 +53,12 @@ set(IMGUI_SOURCES
 
 # Project Sources
 file(GLOB_RECURSE PROJECT_SOURCES "src/*.cpp")
+file(GLOB LIBVTERM_SOURCES
+    "src/terminal/libvterm/src/*.c"
+    "src/terminal/libvterm/src/encoding/*.c"
+)
+message(STATUS "Libvterm sources: ${LIBVTERM_SOURCES}")
+list(APPEND PROJECT_SOURCES ${LIBVTERM_SOURCES})
 
 # Executable
 add_executable(ShadowSSH ${PROJECT_SOURCES} ${IMGUI_SOURCES})
@@ -70,4 +76,6 @@ include_directories(${FREETYPE_INCLUDE_DIRS})
 include_directories(vendor/imgui)
 include_directories(vendor/imgui/backends)
 include_directories(vendor/ImGuiColorTextEdit)
+include_directories(src/terminal/libvterm/include)
+include_directories(src/terminal)
 include_directories(include)
