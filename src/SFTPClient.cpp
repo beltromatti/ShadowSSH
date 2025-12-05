@@ -72,8 +72,8 @@ std::vector<RemoteFile> SFTPClient::list_directory(const std::string& path) {
     return files;
 }
 
-std::string SFTPClient::read_file(const std::string& path) {
-    if (!sftp) return "";
+bool SFTPClient::read_file(const std::string& path, std::string& out) {
+    if (!sftp) return false;
 
     std::lock_guard<std::mutex> local_lock(local_mutex);
     if (session_mutex) session_mutex->lock();
@@ -81,20 +81,26 @@ std::string SFTPClient::read_file(const std::string& path) {
     sftp_file file = sftp_open(sftp, path.c_str(), O_RDONLY, 0);
     if (!file) {
         if (session_mutex) session_mutex->unlock();
-        return "";
+        return false;
     }
 
-    std::string content;
+    out.clear();
     char buffer[1024];
     ssize_t nbytes;
 
     while ((nbytes = sftp_read(file, buffer, sizeof(buffer))) > 0) {
-        content.append(buffer, nbytes);
+        out.append(buffer, nbytes);
     }
 
     sftp_close(file);
     
     if (session_mutex) session_mutex->unlock();
+    return nbytes == 0;
+}
+
+std::string SFTPClient::read_file(const std::string& path) {
+    std::string content;
+    read_file(path, content);
     return content;
 }
 

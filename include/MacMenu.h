@@ -1,6 +1,7 @@
 #pragma once
 
 #ifdef __APPLE__
+#include <string>
 // SDL user event codes emitted by the native macOS menu.
 enum MacMenuCommand {
     MacMenu_Launch = 1,
@@ -17,4 +18,5 @@ enum MacMenuCommand {
 // Create or update the Terminal menu in the macOS system menu bar.
 // Pass whether the terminal session is already launched to toggle the label.
 void Mac_CreateOrUpdateTerminalMenu(bool terminal_launched);
+std::string Mac_ShowOpenFilePanel();
 #endif

@@ -20,6 +20,7 @@ public:
     void cleanup();
 
     std::vector<RemoteFile> list_directory(const std::string& path);
+    bool read_file(const std::string& path, std::string& out);
     std::string read_file(const std::string& path);
     bool write_file(const std::string& path, const std::string& content);
     bool delete_path(const std::string& path, bool is_dir);

@@ -331,6 +331,7 @@ void Application::RenderLogin() {
         files_need_refresh = true;
         sftpClient.init(sshClient.get_session(), &sshClient.get_mutex());
         monitor.Start(host_input, atoi(port_input), user_input, pass_input, key_path_input);
+        current_path = ".";
         path_history.clear();
         path_history.push_back(current_path);
         history_index = 0;
@@ -362,27 +363,19 @@ void Application::RenderWorkspace() {
     monitor.Render(); 
 }
 
-static std::string Trim(const std::string& s) {
-    size_t start = s.find_first_not_of(" \n\r\t");
-    size_t end = s.find_last_not_of(" \n\r\t");
-    if (start == std::string::npos) return "";
-    return s.substr(start, end - start + 1);
-}
-
 static std::string PickLocalFile() {
 #ifdef __APPLE__
-    std::string result;
-    FILE* pipe = popen("osascript -e 'tell application \"System Events\" to POSIX path of (choose file)'", "r");
-    if (!pipe) return "";
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe)) {
-        result += buffer;
-    }
-    pclose(pipe);
-    return Trim(result);
+    return Mac_ShowOpenFilePanel();
 #else
     return "";
 #endif
+}
+
+static std::string JoinPath(const std::string& base, const std::string& name) {
+    if (base == "." || base.empty()) return name;
+    if (base == "/") return "/" + name;
+    if (base.back() == '/') return base + name;
+    return base + "/" + name;
 }
 
 void Application::RenderFileBrowser() {
@@ -417,26 +410,13 @@ void Application::RenderFileBrowser() {
     ImGui::Text("Path: %s", current_path.c_str());
     ImGui::SameLine();
     if (ImGui::Button("Upload")) {
-        if (!upload_picker_running) {
-            upload_picker_running = true;
-            std::thread([this]() {
-                std::string local = PickLocalFile();
-                pending_upload_path = local;
-                upload_ready = true;
-                upload_picker_running = false;
-            }).detach();
-        }
-    }
-    if (upload_ready) {
-        upload_ready = false;
-        std::string local = pending_upload_path;
-        pending_upload_path.clear();
+        std::string local = PickLocalFile();
         if (!local.empty()) {
             std::ifstream in(local, std::ios::binary);
             if (in) {
                 std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
                 std::string filename = std::filesystem::path(local).filename().string();
-                std::string remote_path = (current_path == "/") ? "/" + filename : current_path + "/" + filename;
+                std::string remote_path = JoinPath(current_path, filename);
                 sftpClient.write_file(remote_path, content);
                 files_need_refresh = true;
             }
@@ -465,7 +445,7 @@ void Application::RenderFileBrowser() {
                 selected_file_index = i;
                 if (ImGui::IsMouseDoubleClicked(0)) {
                     if (current_files[i].is_dir) {
-                        std::string next = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        std::string next = JoinPath(current_path, current_files[i].name);
                         // update history
                         if (history_index + 1 < (int)path_history.size()) {
                             path_history.erase(path_history.begin() + history_index + 1, path_history.end());
@@ -485,23 +465,24 @@ void Application::RenderFileBrowser() {
                         OpenFile(current_files[i].name);
                     }
                     if (ImGui::MenuItem("Download")) {
-                        std::string full_path = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
-                        std::string content = sftpClient.read_file(full_path);
+                        std::string full_path = JoinPath(current_path, current_files[i].name);
+                        std::string content;
+                        bool ok = sftpClient.read_file(full_path, content);
                         const char* home = getenv("HOME");
-                        if (home) {
+                        if (home && ok) {
                             std::filesystem::path dst = std::filesystem::path(home) / "Downloads" / current_files[i].name;
                             std::ofstream out(dst, std::ios::binary);
                             out.write(content.data(), content.size());
                         }
                     }
                     if (ImGui::MenuItem("Delete")) {
-                        std::string full_path = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        std::string full_path = JoinPath(current_path, current_files[i].name);
                         sftpClient.delete_path(full_path, false);
                         files_need_refresh = true;
                     }
                 } else {
                     if (ImGui::MenuItem("Open Folder")) {
-                        std::string next = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        std::string next = JoinPath(current_path, current_files[i].name);
                         if (history_index + 1 < (int)path_history.size()) {
                             path_history.erase(path_history.begin() + history_index + 1, path_history.end());
                         }
@@ -511,7 +492,7 @@ void Application::RenderFileBrowser() {
                         files_need_refresh = true;
                     }
                     if (ImGui::MenuItem("Delete")) {
-                        std::string full_path = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        std::string full_path = JoinPath(current_path, current_files[i].name);
                         sftpClient.delete_path(full_path, true);
                         files_need_refresh = true;
                     }
@@ -587,8 +568,9 @@ void Application::RefreshFileList() {
 }
 
 void Application::OpenFile(const std::string& filename) {
-    std::string full_path = (current_path == "/") ? "/" + filename : current_path + "/" + filename;
-    std::string content = sftpClient.read_file(full_path);
+    std::string full_path = JoinPath(current_path, filename);
+    std::string content;
+    sftpClient.read_file(full_path, content);
     
     editorManager.OpenFile(filename, full_path, content);
 }

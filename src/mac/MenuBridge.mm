@@ -2,6 +2,7 @@
 #import <Cocoa/Cocoa.h>
 #include <SDL.h>
 #include "MacMenu.h"
+#include <string>
 
 @interface MacMenuHandler : NSObject
 @property (nonatomic, assign) BOOL launched;
@@ -83,6 +84,23 @@ void Mac_CreateOrUpdateTerminalMenu(bool terminal_launched) {
 
     [gLaunchItem setHidden:terminal_launched];
     [gRelaunchItem setHidden:!terminal_launched];
+}
+
+std::string Mac_ShowOpenFilePanel() {
+    @autoreleasepool {
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        [panel setAllowsMultipleSelection:NO];
+        [panel setCanChooseDirectories:NO];
+        [panel setCanChooseFiles:YES];
+        NSInteger result = [panel runModal];
+        if (result == NSModalResponseOK) {
+            NSURL* url = [[panel URLs] firstObject];
+            if (url) {
+                return std::string([[url path] UTF8String]);
+            }
+        }
+    }
+    return "";
 }
 
 #endif

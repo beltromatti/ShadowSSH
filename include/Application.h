@@ -54,10 +54,6 @@ private:
     int history_index = -1;
     bool files_need_refresh = false;
     int selected_file_index = -1;
-    // Upload picker state
-    std::string pending_upload_path;
-    bool upload_picker_running = false;
-    bool upload_ready = false;
 
     // Editor State
     EditorManager editorManager;
