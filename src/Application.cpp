@@ -13,6 +13,7 @@
 #include <iostream>
 #include <algorithm>
 #include <filesystem>
+#include <pwd.h>
 
 Application::Application() {
     // Load config
@@ -378,6 +379,14 @@ static std::string JoinPath(const std::string& base, const std::string& name) {
     return base + "/" + name;
 }
 
+static std::string GetHomePath() {
+    const char* home_env = getenv("HOME");
+    if (home_env && *home_env) return std::string(home_env);
+    struct passwd* pw = getpwuid(getuid());
+    if (pw && pw->pw_dir) return std::string(pw->pw_dir);
+    return "";
+}
+
 void Application::RenderFileBrowser() {
     ImGui::Begin("File Browser");
     if (files_need_refresh) {
@@ -468,11 +477,23 @@ void Application::RenderFileBrowser() {
                         std::string full_path = JoinPath(current_path, current_files[i].name);
                         std::string content;
                         bool ok = sftpClient.read_file(full_path, content);
-                        const char* home = getenv("HOME");
-                        if (home && ok) {
-                            std::filesystem::path dst = std::filesystem::path(home) / "Downloads" / current_files[i].name;
+                        std::string home = GetHomePath();
+                        if (home.empty()) {
+                            snprintf(status_msg, sizeof(status_msg), "Download failed: cannot resolve home path");
+                        } else if (!ok) {
+                            snprintf(status_msg, sizeof(status_msg), "Download failed: remote read error");
+                        } else {
+                            std::filesystem::path downloads_dir = std::filesystem::path(home) / "Downloads";
+                            std::error_code ec;
+                            std::filesystem::create_directories(downloads_dir, ec);
+                            std::filesystem::path dst = downloads_dir / current_files[i].name;
                             std::ofstream out(dst, std::ios::binary);
-                            out.write(content.data(), content.size());
+                            if (out) {
+                                out.write(content.data(), content.size());
+                                snprintf(status_msg, sizeof(status_msg), "Downloaded to %s", dst.string().c_str());
+                            } else {
+                                snprintf(status_msg, sizeof(status_msg), "Download failed: cannot write to %s", dst.string().c_str());
+                            }
                         }
                     }
                     if (ImGui::MenuItem("Delete")) {
