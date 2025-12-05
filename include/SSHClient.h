@@ -48,4 +48,9 @@ private:
     std::mutex error_mutex;
 
     void set_error(const std::string& err);
+    bool verify_known_host();
+    void close_shell_channel();
+    void join_worker();
+
+    std::thread worker_thread;
 };
