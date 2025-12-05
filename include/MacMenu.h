@@ -19,4 +19,5 @@ enum MacMenuCommand {
 // Pass whether the terminal session is already launched to toggle the label.
 void Mac_CreateOrUpdateTerminalMenu(bool terminal_launched);
 std::string Mac_ShowOpenFilePanel();
+std::string Mac_ShowSaveFilePanel(const std::string& suggested_name, const std::string& directory);
 #endif

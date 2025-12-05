@@ -379,6 +379,19 @@ static std::string JoinPath(const std::string& base, const std::string& name) {
     return base + "/" + name;
 }
 
+static std::string PickDownloadPath(const std::string& filename, const std::string& home) {
+#ifdef __APPLE__
+    std::string initial_dir = home.empty() ? "" : (std::filesystem::path(home) / "Downloads").string();
+    std::string chosen = Mac_ShowSaveFilePanel(filename, initial_dir);
+    if (!chosen.empty()) return chosen;
+#endif
+    if (home.empty()) return filename;
+    std::filesystem::path downloads_dir = std::filesystem::path(home) / "Downloads";
+    std::error_code ec;
+    std::filesystem::create_directories(downloads_dir, ec);
+    return (downloads_dir / filename).string();
+}
+
 static std::string GetHomePath() {
     const char* home_env = getenv("HOME");
     if (home_env && *home_env) return std::string(home_env);
@@ -479,16 +492,9 @@ void Application::RenderFileBrowser() {
                         if (home.empty()) {
                             snprintf(status_msg, sizeof(status_msg), "Download failed: cannot resolve home path");
                         } else {
-                            std::filesystem::path downloads_dir = std::filesystem::path(home) / "Downloads";
-                            std::error_code ec;
-                            std::filesystem::create_directories(downloads_dir, ec);
-                            std::filesystem::path dst = downloads_dir / current_files[i].name;
-                            bool ok = sftpClient.download_file(full_path, dst.string());
-                            if (ok) {
-                                snprintf(status_msg, sizeof(status_msg), "Downloaded to %s", dst.string().c_str());
-                            } else {
-                                snprintf(status_msg, sizeof(status_msg), "Download failed: transfer error");
-                            }
+                            std::string save_path = PickDownloadPath(current_files[i].name, home);
+                            bool ok = sftpClient.download_file(full_path, save_path);
+                            snprintf(status_msg, sizeof(status_msg), ok ? "Downloaded to %s" : "Download failed: transfer error", save_path.c_str());
                         }
                     }
                     if (ImGui::MenuItem("Delete")) {

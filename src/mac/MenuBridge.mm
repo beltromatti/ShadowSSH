@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include "MacMenu.h"
 #include <string>
+#include <filesystem>
 
 @interface MacMenuHandler : NSObject
 @property (nonatomic, assign) BOOL launched;
@@ -95,6 +96,28 @@ std::string Mac_ShowOpenFilePanel() {
         NSInteger result = [panel runModal];
         if (result == NSModalResponseOK) {
             NSURL* url = [[panel URLs] firstObject];
+            if (url) {
+                return std::string([[url path] UTF8String]);
+            }
+        }
+    }
+    return "";
+}
+
+std::string Mac_ShowSaveFilePanel(const std::string& suggested_name, const std::string& directory) {
+    @autoreleasepool {
+        NSSavePanel* panel = [NSSavePanel savePanel];
+        if (!directory.empty()) {
+            NSString* dir = [NSString stringWithUTF8String:directory.c_str()];
+            [panel setDirectoryURL:[NSURL fileURLWithPath:dir]];
+        }
+        if (!suggested_name.empty()) {
+            NSString* name = [NSString stringWithUTF8String:suggested_name.c_str()];
+            [panel setNameFieldStringValue:name];
+        }
+        NSInteger result = [panel runModal];
+        if (result == NSModalResponseOK) {
+            NSURL* url = [panel URL];
             if (url) {
                 return std::string([[url path] UTF8String]);
             }
