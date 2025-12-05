@@ -405,18 +405,20 @@ void Terminal::Render() {
         ImGui::EndPopup();
     }
 
-    // Draw blinking cursor
-    float t = ImGui::GetTime();
-    bool blink_on = fmodf(t, 1.0f) < 0.5f;
-    if (blink_on) {
-        int line = (int)scrollback.size() + cursor_pos.row;
-        if (line >= 0 && line < (int)lines.size()) {
-            float y = origin.y + line * line_height;
-            std::string prefix = plain[line].substr(0, cursor_pos.col);
-            float x = origin.x + ImGui::CalcTextSize(prefix.c_str()).x;
-            ImVec2 p1(x, y);
-            ImVec2 p2(x + 2.0f, y + line_height - 2.0f);
-            ImGui::GetWindowDrawList()->AddRectFilled(p1, p2, ImGui::GetColorU32(ImVec4(0.9f,0.9f,0.9f,1.0f)));
+    // Draw blinking cursor only when focused
+    if (focused) {
+        float t = ImGui::GetTime();
+        bool blink_on = fmodf(t, 1.0f) < 0.5f;
+        if (blink_on) {
+            int line = (int)scrollback.size() + cursor_pos.row;
+            if (line >= 0 && line < (int)lines.size()) {
+                float y = origin.y + line * line_height;
+                std::string prefix = plain[line].substr(0, cursor_pos.col);
+                float x = origin.x + ImGui::CalcTextSize(prefix.c_str()).x;
+                ImVec2 p1(x, y);
+                ImVec2 p2(x + 2.0f, y + line_height - 2.0f);
+                ImGui::GetWindowDrawList()->AddRectFilled(p1, p2, ImGui::GetColorU32(ImVec4(0.9f,0.9f,0.9f,1.0f)));
+            }
         }
     }
 

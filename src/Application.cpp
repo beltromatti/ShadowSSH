@@ -42,6 +42,7 @@ bool Application::Init() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigMacOSXBehaviors = true; // Use Cmd for copy/paste/save shortcuts on macOS
 
     ApplyDarkTheme();
     
