@@ -21,6 +21,10 @@
 - (void)clear:(id)sender { [self emit: MacMenu_Clear]; }
 - (void)reset:(id)sender { [self emit: MacMenu_Reset]; }
 - (void)sendCtrlC:(id)sender { [self emit: MacMenu_SendCtrlC]; }
+- (void)sendCtrlZ:(id)sender { [self emit: MacMenu_SendCtrlZ]; }
+- (void)sendCtrlD:(id)sender { [self emit: MacMenu_SendCtrlD]; }
+- (void)sendCtrlX:(id)sender { [self emit: MacMenu_SendCtrlX]; }
+- (void)sendCtrlO:(id)sender { [self emit: MacMenu_SendCtrlO]; }
 @end
 
 static NSMenuItem* gTerminalMenuItem = nil;
@@ -52,6 +56,14 @@ void Mac_CreateOrUpdateTerminalMenu(bool terminal_launched) {
         [resetItem setTarget:gHandler];
         NSMenuItem* ctrlCItem = [[NSMenuItem alloc] initWithTitle:@"Send Ctrl+C" action:@selector(sendCtrlC:) keyEquivalent:@""];
         [ctrlCItem setTarget:gHandler];
+        NSMenuItem* ctrlZItem = [[NSMenuItem alloc] initWithTitle:@"Send Ctrl+Z" action:@selector(sendCtrlZ:) keyEquivalent:@""];
+        [ctrlZItem setTarget:gHandler];
+        NSMenuItem* ctrlDItem = [[NSMenuItem alloc] initWithTitle:@"Send Ctrl+D" action:@selector(sendCtrlD:) keyEquivalent:@""];
+        [ctrlDItem setTarget:gHandler];
+        NSMenuItem* ctrlXItem = [[NSMenuItem alloc] initWithTitle:@"Send Ctrl+X" action:@selector(sendCtrlX:) keyEquivalent:@""];
+        [ctrlXItem setTarget:gHandler];
+        NSMenuItem* ctrlOItem = [[NSMenuItem alloc] initWithTitle:@"Send Ctrl+O" action:@selector(sendCtrlO:) keyEquivalent:@""];
+        [ctrlOItem setTarget:gHandler];
 
         [termMenu addItem:gLaunchItem];
         [termMenu addItem:gRelaunchItem];
@@ -59,6 +71,10 @@ void Mac_CreateOrUpdateTerminalMenu(bool terminal_launched) {
         [termMenu addItem:clearItem];
         [termMenu addItem:resetItem];
         [termMenu addItem:ctrlCItem];
+        [termMenu addItem:ctrlZItem];
+        [termMenu addItem:ctrlDItem];
+        [termMenu addItem:ctrlXItem];
+        [termMenu addItem:ctrlOItem];
 
         gTerminalMenuItem = [[NSMenuItem alloc] initWithTitle:@"Terminal" action:nil keyEquivalent:@""];
         [gTerminalMenuItem setSubmenu:termMenu];

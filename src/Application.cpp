@@ -45,7 +45,7 @@ bool Application::Init() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigMacOSXBehaviors = true; // Use Cmd for copy/paste/save shortcuts on macOS
+    io.ConfigMacOSXBehaviors = false; // Use Ctrl for shortcuts to match requested behavior
 
     ApplyDarkTheme();
     
@@ -123,6 +123,10 @@ void Application::Run() {
                     case MacMenu_Clear: terminal.ClearScrollback(); break;
                     case MacMenu_Reset: terminal.Reset(); shell_ready = false; break;
                     case MacMenu_SendCtrlC: sshClient.send_shell_command("\x03"); break;
+                    case MacMenu_SendCtrlZ: sshClient.send_shell_command("\x1A"); break;
+                    case MacMenu_SendCtrlD: sshClient.send_shell_command("\x04"); break;
+                    case MacMenu_SendCtrlX: sshClient.send_shell_command("\x18"); break;
+                    case MacMenu_SendCtrlO: sshClient.send_shell_command("\x0F"); break;
                 }
             }
 #endif
@@ -130,14 +134,7 @@ void Application::Run() {
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
-        ImGuiIO& io = ImGui::GetIO();
-        bool physical_ctrl = io.KeyCtrl;
-        bool cmd = io.KeySuper;
-        // Make Cmd act as Ctrl for ImGui widgets (copy/paste/save) while preserving physical Ctrl for terminal signals
-        if (io.ConfigMacOSXBehaviors) {
-            io.KeyCtrl = cmd;
-            io.KeySuper = cmd;
-        }
+        // No Cmd remap: Ctrl remains the modifier for copy/paste/save
         ImGui::NewFrame();
 
 #ifndef __APPLE__
@@ -163,6 +160,18 @@ void Application::Run() {
                 }
                 if (ImGui::MenuItem("Send Ctrl+C to Shell")) {
                     sshClient.send_shell_command("\x03");
+                }
+                if (ImGui::MenuItem("Send Ctrl+Z to Shell")) {
+                    sshClient.send_shell_command("\x1A");
+                }
+                if (ImGui::MenuItem("Send Ctrl+D to Shell")) {
+                    sshClient.send_shell_command("\x04");
+                }
+                if (ImGui::MenuItem("Send Ctrl+X to Shell")) {
+                    sshClient.send_shell_command("\x18");
+                }
+                if (ImGui::MenuItem("Send Ctrl+O to Shell")) {
+                    sshClient.send_shell_command("\x0F");
                 }
                 ImGui::EndMenu();
             }
@@ -448,11 +457,6 @@ void Application::RenderTerminal() {
         terminal.Feed(chunk);
         chunk = sshClient.read_shell_output();
     }
-
-    // Pass physical Ctrl state for control codes
-    ImGuiIO& io = ImGui::GetIO();
-    bool physical_ctrl = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
-    terminal.SetPhysicalCtrl(physical_ctrl);
 
     terminal.Render();
 

@@ -7,7 +7,11 @@ enum MacMenuCommand {
     MacMenu_Relaunch = 2,
     MacMenu_Clear = 3,
     MacMenu_Reset = 4,
-    MacMenu_SendCtrlC = 5
+    MacMenu_SendCtrlC = 5,
+    MacMenu_SendCtrlZ = 6,
+    MacMenu_SendCtrlD = 7,
+    MacMenu_SendCtrlX = 8,
+    MacMenu_SendCtrlO = 9
 };
 
 // Create or update the Terminal menu in the macOS system menu bar.

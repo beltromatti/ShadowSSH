@@ -20,9 +20,6 @@ public:
     // Render terminal contents inside current ImGui window.
     void Render();
 
-    // Inject physical Ctrl state (so Cmd can be remapped to Ctrl for ImGui widgets).
-    void SetPhysicalCtrl(bool ctrl_down) { physical_ctrl = ctrl_down; }
-
     // Bytes to send upstream (keys typed by the user).
     std::string ConsumeOutgoing();
 
@@ -60,7 +57,6 @@ private:
     bool selecting = false;
     std::optional<SelPos> sel_start;
     std::optional<SelPos> sel_end;
-    bool physical_ctrl = false;
 
     // State helpers
     void init_vterm();

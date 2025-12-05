@@ -260,8 +260,7 @@ void Terminal::rebuild_screen(std::vector<Line>& lines_out, std::vector<std::str
 void Terminal::handle_input() {
     ImGuiIO& io = ImGui::GetIO();
     VTermModifier mods = imgui_mods();
-    bool cmdDown = io.KeySuper;
-    bool ctrlOnly = physical_ctrl && !cmdDown;
+    bool ctrlDown = io.KeyCtrl;
 
     // Printable chars
     for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
@@ -285,17 +284,10 @@ void Terminal::handle_input() {
     if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) send_key(VTERM_KEY_PAGEUP);
     if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) send_key(VTERM_KEY_PAGEDOWN);
 
-    // Copy is handled in Render when Cmd+C and selection exists
+    // Copy handled in Render when Ctrl+C and selection exists
 
-    // Ctrl+ combos to send control chars
-    if (ctrlOnly) {
-        if (ImGui::IsKeyPressed(ImGuiKey_C)) send_control_char('\x03'); // ETX
-        if (ImGui::IsKeyPressed(ImGuiKey_Z)) send_control_char('\x1A'); // SUB
-        if (ImGui::IsKeyPressed(ImGuiKey_D)) send_control_char('\x04'); // EOT
-    }
-
-    // Cmd+V paste
-    if (cmdDown && ImGui::IsKeyPressed(ImGuiKey_V)) {
+    // Ctrl+V paste
+    if (ctrlDown && ImGui::IsKeyPressed(ImGuiKey_V)) {
         paste_clipboard();
     }
 }
