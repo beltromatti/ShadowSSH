@@ -42,8 +42,10 @@ private:
 
     VTerm* vt = nullptr;
     VTermScreen* screen = nullptr;
+    VTermState* state = nullptr;
     int cols;
     int rows;
+    VTermPos cursor_pos{0,0};
 
     std::deque<Line> scrollback;
     size_t max_scrollback = 4000;
@@ -51,9 +53,10 @@ private:
     std::string outgoing;
 
     // Selection
+    struct SelPos { int line = 0; int col = 0; };
     bool selecting = false;
-    std::optional<ImVec2> select_start;
-    std::optional<ImVec2> select_end;
+    std::optional<SelPos> sel_start;
+    std::optional<SelPos> sel_end;
 
     // State helpers
     void init_vterm();
@@ -75,6 +78,7 @@ private:
     void clear_selection();
     void copy_selection_to_clipboard(const ImVec2& origin, float line_height, const std::vector<std::string>& lines);
     int point_to_col(const std::string& text, float x) const;
+    SelPos mouse_to_pos(const ImVec2& mouse, const ImVec2& origin, float line_height, const std::vector<std::string>& lines) const;
 
     void handle_input();
 };

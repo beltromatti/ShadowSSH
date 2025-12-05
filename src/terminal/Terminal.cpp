@@ -54,6 +54,7 @@ void Terminal::init_vterm() {
     vterm_output_set_callback(vt, &Terminal::write_callback, this);
 
     screen = vterm_obtain_screen(vt);
+    state = vterm_obtain_state(vt);
     static VTermScreenCallbacks cbs;
     cbs.damage = &Terminal::damage_callback;
     cbs.moverect = &Terminal::moverect_callback;
@@ -155,13 +156,13 @@ std::string Terminal::cell_text(const Cell& cell) const {
 }
 
 bool Terminal::has_selection() const {
-    return select_start.has_value() && select_end.has_value();
+    return sel_start.has_value() && sel_end.has_value();
 }
 
 void Terminal::clear_selection() {
     selecting = false;
-    select_start.reset();
-    select_end.reset();
+    sel_start.reset();
+    sel_end.reset();
 }
 
 int Terminal::point_to_col(const std::string& text, float x) const {
@@ -180,20 +181,28 @@ int Terminal::point_to_col(const std::string& text, float x) const {
     return (int)text.size();
 }
 
+Terminal::SelPos Terminal::mouse_to_pos(const ImVec2& mouse, const ImVec2& origin, float line_height, const std::vector<std::string>& lines) const {
+    SelPos pos;
+    int line = (int)((mouse.y - origin.y) / line_height);
+    line = std::clamp(line, 0, (int)lines.size() - 1);
+    pos.line = line;
+    float relx = mouse.x - origin.x;
+    pos.col = point_to_col(lines[line], relx);
+    return pos;
+}
+
 void Terminal::copy_selection_to_clipboard(const ImVec2& origin, float line_height, const std::vector<std::string>& lines) {
     if (!has_selection() || lines.empty()) return;
-    ImVec2 a = select_start.value();
-    ImVec2 b = select_end.value();
-    if (b.y < a.y || (b.y == a.y && b.x < a.x)) std::swap(a, b);
-    int start_line = (int)((a.y - origin.y) / line_height);
-    int end_line = (int)((b.y - origin.y) / line_height);
-    start_line = std::max(0, start_line);
-    end_line = std::min((int)lines.size() - 1, end_line);
+    SelPos a = sel_start.value();
+    SelPos b = sel_end.value();
+    if (b.line < a.line || (b.line == a.line && b.col < a.col)) std::swap(a, b);
+    int start_line = std::clamp(a.line, 0, (int)lines.size() - 1);
+    int end_line = std::clamp(b.line, 0, (int)lines.size() - 1);
     std::string clip;
     for (int i = start_line; i <= end_line; ++i) {
         const std::string& l = lines[i];
-        int start_col = (i == start_line) ? point_to_col(l, a.x - origin.x) : 0;
-        int end_col = (i == end_line) ? point_to_col(l, b.x - origin.x) : (int)l.size();
+        int start_col = (i == start_line) ? a.col : 0;
+        int end_col = (i == end_line) ? b.col : (int)l.size();
         start_col = std::clamp(start_col, 0, (int)l.size());
         end_col = std::clamp(end_col, 0, (int)l.size());
         if (start_col < end_col) clip.append(l.substr(start_col, end_col - start_col));
@@ -216,6 +225,7 @@ void Terminal::rebuild_screen(std::vector<Line>& lines_out, std::vector<std::str
     // Current screen
     int cur_rows, cur_cols;
     vterm_get_size(vt, &cur_rows, &cur_cols);
+    vterm_state_get_cursorpos(state, &cursor_pos);
     Line line;
     line.cells.resize(cur_cols);
     for (int r = 0; r < cur_rows; ++r) {
@@ -335,19 +345,29 @@ void Terminal::Render() {
     if (hovered && ImGui::IsMouseClicked(0)) {
         clear_selection();
         selecting = true;
-        select_start = ImGui::GetIO().MousePos;
-        select_end = select_start;
+        sel_start = mouse_to_pos(ImGui::GetIO().MousePos, origin, line_height, plain);
+        sel_end = sel_start;
     }
     if (selecting && ImGui::IsMouseDown(0)) {
-        select_end = ImGui::GetIO().MousePos;
+        sel_end = mouse_to_pos(ImGui::GetIO().MousePos, origin, line_height, plain);
     } else if (selecting && ImGui::IsMouseReleased(0)) {
-        select_end = ImGui::GetIO().MousePos;
+        sel_end = mouse_to_pos(ImGui::GetIO().MousePos, origin, line_height, plain);
         selecting = false;
     }
     if (has_selection()) {
-        ImVec2 a = select_start.value();
-        ImVec2 b = select_end.value();
-        ImGui::GetWindowDrawList()->AddRectFilled(a, b, ImGui::GetColorU32(ImVec4(0.2f,0.4f,1.0f,0.35f)));
+        SelPos a = sel_start.value();
+        SelPos b = sel_end.value();
+        if (b.line < a.line || (b.line == a.line && b.col < a.col)) std::swap(a, b);
+        for (int line_idx = a.line; line_idx <= b.line && line_idx < (int)plain.size(); ++line_idx) {
+            int start_col = (line_idx == a.line) ? a.col : 0;
+            int end_col = (line_idx == b.line) ? b.col : (int)plain[line_idx].size();
+            start_col = std::clamp(start_col, 0, (int)plain[line_idx].size());
+            end_col = std::clamp(end_col, 0, (int)plain[line_idx].size());
+            float y = origin.y + line_idx * line_height;
+            float x_start = origin.x + ImGui::CalcTextSize(plain[line_idx].substr(0, start_col).c_str()).x;
+            float x_end = origin.x + ImGui::CalcTextSize(plain[line_idx].substr(0, end_col).c_str()).x;
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(x_start, y), ImVec2(x_end, y + line_height), ImGui::GetColorU32(ImVec4(0.2f,0.4f,1.0f,0.35f)));
+        }
     }
 
     // Auto-scroll
@@ -358,6 +378,21 @@ void Terminal::Render() {
     // Copy shortcut
     if (has_selection() && ImGui::GetIO().KeySuper && ImGui::IsKeyPressed(ImGuiKey_C)) {
         copy_selection_to_clipboard(origin, line_height, plain);
+    }
+
+    // Draw blinking cursor
+    float t = ImGui::GetTime();
+    bool blink_on = fmodf(t, 1.0f) < 0.5f;
+    if (blink_on) {
+        int line = (int)scrollback.size() + cursor_pos.row;
+        if (line >= 0 && line < (int)lines.size()) {
+            float y = origin.y + line * line_height;
+            std::string prefix = plain[line].substr(0, cursor_pos.col);
+            float x = origin.x + ImGui::CalcTextSize(prefix.c_str()).x;
+            ImVec2 p1(x, y);
+            ImVec2 p2(x + 2.0f, y + line_height - 2.0f);
+            ImGui::GetWindowDrawList()->AddRectFilled(p1, p2, ImGui::GetColorU32(ImVec4(0.9f,0.9f,0.9f,1.0f)));
+        }
     }
 
     ImGui::EndChild();
