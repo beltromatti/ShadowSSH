@@ -6,7 +6,9 @@
 #include "SSHClient.h"
 
 struct ServerStats {
-    float load_avg = 0.0f;
+    float load1 = 0.0f;
+    float load5 = 0.0f;
+    float load15 = 0.0f;
     float cpu_usage = 0.0f;
     
     uint64_t ram_total = 1;
@@ -50,4 +52,8 @@ private:
     uint64_t last_net_bytes_rx = 0;
     uint64_t last_net_bytes_tx = 0;
     double last_poll_time = 0.0;
+
+    double last_cpu_total = 0.0;
+    double last_cpu_idle = 0.0;
+    std::string active_iface;
 };
