@@ -385,8 +385,8 @@ void Terminal::Render() {
         ImGui::SetScrollHereY(1.0f);
     }
 
-    // Copy shortcut
-    if (has_selection() && ImGui::GetIO().KeySuper && ImGui::IsKeyPressed(ImGuiKey_C)) {
+    // Copy shortcut (Ctrl)
+    if (has_selection() && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C)) {
         copy_selection_to_clipboard(origin, line_height, plain);
     }
 
