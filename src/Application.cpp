@@ -130,10 +130,13 @@ void Application::Run() {
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
-        // Make Cmd act as Ctrl for ImGui shortcuts (editor/text widgets)
         ImGuiIO& io = ImGui::GetIO();
+        bool physical_ctrl = io.KeyCtrl;
+        bool cmd = io.KeySuper;
+        // Make Cmd act as Ctrl for ImGui widgets (copy/paste/save) while preserving physical Ctrl for terminal signals
         if (io.ConfigMacOSXBehaviors) {
-            io.KeyCtrl = io.KeyCtrl || io.KeySuper;
+            io.KeyCtrl = cmd;
+            io.KeySuper = cmd;
         }
         ImGui::NewFrame();
 
@@ -445,6 +448,11 @@ void Application::RenderTerminal() {
         terminal.Feed(chunk);
         chunk = sshClient.read_shell_output();
     }
+
+    // Pass physical Ctrl state for control codes
+    ImGuiIO& io = ImGui::GetIO();
+    bool physical_ctrl = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
+    terminal.SetPhysicalCtrl(physical_ctrl);
 
     terminal.Render();
 

@@ -261,7 +261,7 @@ void Terminal::handle_input() {
     ImGuiIO& io = ImGui::GetIO();
     VTermModifier mods = imgui_mods();
     bool cmdDown = io.KeySuper;
-    bool ctrlOnly = io.KeyCtrl && !io.KeySuper;
+    bool ctrlOnly = physical_ctrl && !cmdDown;
 
     // Printable chars
     for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
