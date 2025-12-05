@@ -79,6 +79,8 @@ private:
     void copy_selection_to_clipboard(const ImVec2& origin, float line_height, const std::vector<std::string>& lines);
     int point_to_col(const std::string& text, float x) const;
     SelPos mouse_to_pos(const ImVec2& mouse, const ImVec2& origin, float line_height, const std::vector<std::string>& lines) const;
+    void paste_clipboard();
+    void send_control_char(char c);
 
     void handle_input();
 };

@@ -283,16 +283,18 @@ void Terminal::handle_input() {
     if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) send_key(VTERM_KEY_PAGEUP);
     if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) send_key(VTERM_KEY_PAGEDOWN);
 
-    if (io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_C)) {
-        // Copy handled separately in Render when selection exists
+    // Copy is handled in Render when Cmd+C and selection exists
+
+    // Ctrl+ combos to send control chars
+    if (io.KeyCtrl) {
+        if (ImGui::IsKeyPressed(ImGuiKey_C)) send_control_char('\x03'); // ETX
+        if (ImGui::IsKeyPressed(ImGuiKey_Z)) send_control_char('\x1A'); // SUB
+        if (ImGui::IsKeyPressed(ImGuiKey_D)) send_control_char('\x04'); // EOT
     }
+
+    // Cmd+V paste
     if (io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_V)) {
-        const char* clip = ImGui::GetClipboardText();
-        if (clip) {
-            vterm_keyboard_start_paste(vt);
-            vterm_input_write(vt, clip, strlen(clip));
-            vterm_keyboard_end_paste(vt);
-        }
+        paste_clipboard();
     }
 }
 
@@ -420,4 +422,16 @@ void Terminal::Render() {
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
+}
+
+void Terminal::paste_clipboard() {
+    const char* clip = ImGui::GetClipboardText();
+    if (!clip) return;
+    vterm_keyboard_start_paste(vt);
+    vterm_input_write(vt, clip, strlen(clip));
+    vterm_keyboard_end_paste(vt);
+}
+
+void Terminal::send_control_char(char c) {
+    vterm_input_write(vt, &c, 1);
 }
