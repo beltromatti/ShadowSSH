@@ -181,13 +181,21 @@ int Terminal::point_to_col(const std::string& text, float x) const {
     return (int)text.size();
 }
 
+static int trimmed_len(const std::string& s) {
+    int len = (int)s.size();
+    while (len > 0 && std::isspace((unsigned char)s[len-1])) len--;
+    return len;
+}
+
 Terminal::SelPos Terminal::mouse_to_pos(const ImVec2& mouse, const ImVec2& origin, float line_height, const std::vector<std::string>& lines) const {
     SelPos pos;
     int line = (int)((mouse.y - origin.y) / line_height);
     line = std::clamp(line, 0, (int)lines.size() - 1);
     pos.line = line;
     float relx = mouse.x - origin.x;
-    pos.col = point_to_col(lines[line], relx);
+    int col = point_to_col(lines[line], relx);
+    int maxcol = trimmed_len(lines[line]);
+    pos.col = std::clamp(col, 0, maxcol);
     return pos;
 }
 
@@ -299,6 +307,9 @@ void Terminal::Render() {
     std::vector<Line> lines;
     std::vector<std::string> plain;
     rebuild_screen(lines, plain);
+    std::vector<int> trimmed;
+    trimmed.reserve(plain.size());
+    for (const auto& l : plain) trimmed.push_back(trimmed_len(l));
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     float line_height = ImGui::GetTextLineHeightWithSpacing();
@@ -359,10 +370,13 @@ void Terminal::Render() {
         SelPos b = sel_end.value();
         if (b.line < a.line || (b.line == a.line && b.col < a.col)) std::swap(a, b);
         for (int line_idx = a.line; line_idx <= b.line && line_idx < (int)plain.size(); ++line_idx) {
+            int maxc = trimmed[line_idx];
+            if (maxc <= 0) continue;
             int start_col = (line_idx == a.line) ? a.col : 0;
-            int end_col = (line_idx == b.line) ? b.col : (int)plain[line_idx].size();
-            start_col = std::clamp(start_col, 0, (int)plain[line_idx].size());
-            end_col = std::clamp(end_col, 0, (int)plain[line_idx].size());
+            int end_col = (line_idx == b.line) ? b.col : maxc;
+            start_col = std::clamp(start_col, 0, maxc);
+            end_col = std::clamp(end_col, 0, maxc);
+            if (start_col == end_col) continue;
             float y = origin.y + line_idx * line_height;
             float x_start = origin.x + ImGui::CalcTextSize(plain[line_idx].substr(0, start_col).c_str()).x;
             float x_end = origin.x + ImGui::CalcTextSize(plain[line_idx].substr(0, end_col).c_str()).x;
@@ -378,6 +392,15 @@ void Terminal::Render() {
     // Copy shortcut
     if (has_selection() && ImGui::GetIO().KeySuper && ImGui::IsKeyPressed(ImGuiKey_C)) {
         copy_selection_to_clipboard(origin, line_height, plain);
+    }
+
+    if (ImGui::BeginPopupContextWindow()) {
+        if (has_selection()) {
+            if (ImGui::MenuItem("Copy")) {
+                copy_selection_to_clipboard(origin, line_height, plain);
+            }
+        }
+        ImGui::EndPopup();
     }
 
     // Draw blinking cursor
