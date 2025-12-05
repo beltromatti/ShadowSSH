@@ -130,6 +130,11 @@ void Application::Run() {
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
+        // Make Cmd act as Ctrl for ImGui shortcuts (editor/text widgets)
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.ConfigMacOSXBehaviors) {
+            io.KeyCtrl = io.KeyCtrl || io.KeySuper;
+        }
         ImGui::NewFrame();
 
 #ifndef __APPLE__
