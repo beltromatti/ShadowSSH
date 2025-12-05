@@ -12,15 +12,19 @@ Terminal::Terminal() {
 
 void Terminal::Reset() {
     scrollback.clear();
+    plain.clear();
     current_line.segments.clear();
     current_style = { ImVec4(0.85f, 0.85f, 0.85f, 1.0f), ImVec4(0.05f, 0.05f, 0.05f, 1.0f), false, false, false };
     state = State::Text;
     esc_buffer.clear();
+    clear_selection();
 }
 
 void Terminal::Clear() {
     scrollback.clear();
+    plain.clear();
     current_line.segments.clear();
+    clear_selection();
 }
 
 void Terminal::push_current_line() {
@@ -130,8 +134,25 @@ ImVec4 Terminal::color_from_256(int code) const {
     return ImVec4(level, level, level, 1.0f);
 }
 
-void Terminal::Feed(const std::string& data) {
-    handle_bracketed_paste(data);
+std::string Terminal::strip_bracketed(const std::string& data) {
+    if (data.find("\x1b[200~") == std::string::npos) return data;
+    std::string filtered;
+    size_t i = 0;
+    while (i < data.size()) {
+        if (data.compare(i, 5, "\x1b[200~") == 0) {
+            size_t end = data.find("\x1b[201~", i + 5);
+            if (end == std::string::npos) break;
+            i = end + 5;
+            continue;
+        }
+        filtered.push_back(data[i]);
+        i++;
+    }
+    return filtered;
+}
+
+void Terminal::Feed(const std::string& input) {
+    std::string data = strip_bracketed(input);
     for (char ch : data) {
         unsigned char uc = static_cast<unsigned char>(ch);
         switch (state) {
@@ -164,12 +185,16 @@ void Terminal::Feed(const std::string& data) {
                 }
                 break;
             case State::CSI:
-                if ((uc >= '0' && uc <= '9') || uc == ';') {
+                if ((uc >= '0' && uc <= '9') || uc == ';' || uc == '?' || uc == '>') {
                     esc_buffer.push_back(ch);
                 } else {
                     // parse buffer
+                    std::string buf = esc_buffer;
+                    if (!buf.empty() && (buf[0] == '?' || buf[0] == '>')) {
+                        buf = buf.substr(1);
+                    }
                     std::vector<int> codes;
-                    std::stringstream ss(esc_buffer);
+                    std::stringstream ss(buf);
                     std::string seg;
                     while (std::getline(ss, seg, ';')) {
                         if (!seg.empty()) codes.push_back(std::stoi(seg));
@@ -204,22 +229,6 @@ void Terminal::Feed(const std::string& data) {
     }
 }
 
-void Terminal::handle_bracketed_paste(const std::string& data) {
-    if (!bracketed_paste) return;
-    const std::string start = "\x1b[200~";
-    const std::string end = "\x1b[201~";
-    size_t pos = 0;
-    while (true) {
-        size_t s = data.find(start, pos);
-        if (s == std::string::npos) break;
-        size_t e = data.find(end, s + start.size());
-        if (e == std::string::npos) break;
-        std::string payload = data.substr(s + start.size(), e - (s + start.size()));
-        outgoing += payload;
-        pos = e + end.size();
-    }
-}
-
 std::string Terminal::ConsumeOutgoing() {
     std::string out = outgoing;
     outgoing.clear();
@@ -242,7 +251,7 @@ void Terminal::clear_selection() {
     select_end.reset();
 }
 
-int Terminal::point_to_col(const std::string& text, float x, float /*glyph_w*/) const {
+int Terminal::point_to_col(const std::string& text, float x) const {
     float acc = 0.0f;
     for (size_t i = 0; i < text.size(); ++i) {
         float w = ImGui::CalcTextSize(text.substr(i,1).c_str()).x;
@@ -252,20 +261,20 @@ int Terminal::point_to_col(const std::string& text, float x, float /*glyph_w*/) 
     return (int)text.size();
 }
 
-void Terminal::copy_selection_to_clipboard(const ImVec2& origin, float line_height) {
-    if (!has_selection() || plain.empty()) return;
+void Terminal::copy_selection_to_clipboard(const ImVec2& origin, float line_height, const std::vector<std::string>& lines) {
+    if (!has_selection() || lines.empty()) return;
     ImVec2 a = select_start.value();
     ImVec2 b = select_end.value();
     if (b.y < a.y || (b.y == a.y && b.x < a.x)) std::swap(a, b);
     int start_line = (int)((a.y - origin.y) / line_height);
     int end_line = (int)((b.y - origin.y) / line_height);
     start_line = std::max(0, start_line);
-    end_line = std::min((int)plain.size() - 1, end_line);
+    end_line = std::min((int)lines.size() - 1, end_line);
     std::string clip;
     for (int i = start_line; i <= end_line; ++i) {
-        const std::string& l = plain[i];
-        int start_col = (i == start_line) ? point_to_col(l, a.x - origin.x, 0.0f) : 0;
-        int end_col = (i == end_line) ? point_to_col(l, b.x - origin.x, 0.0f) : (int)l.size();
+        const std::string& l = lines[i];
+        int start_col = (i == start_line) ? point_to_col(l, a.x - origin.x) : 0;
+        int end_col = (i == end_line) ? point_to_col(l, b.x - origin.x) : (int)l.size();
         start_col = std::clamp(start_col, 0, (int)l.size());
         end_col = std::clamp(end_col, 0, (int)l.size());
         if (start_col < end_col) clip.append(l.substr(start_col, end_col - start_col));
@@ -285,6 +294,11 @@ void Terminal::Render() {
     ImVec2 child_origin = ImGui::GetCursorScreenPos();
     float line_height = ImGui::GetTextLineHeight();
     bool hovered = ImGui::IsWindowHovered();
+    // Compose flat lines for selection/copy
+    std::vector<std::string> flat_lines;
+    flat_lines.reserve(scrollback.size() + 1);
+    for (const auto& l : scrollback) flat_lines.push_back(get_plain_text(l));
+    flat_lines.push_back(get_plain_text(current_line));
     while (clip.Step()) {
         for (int idx = clip.DisplayStart; idx < clip.DisplayEnd; ++idx) {
             const Line* line;
@@ -341,50 +355,57 @@ void Terminal::Render() {
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
-    // Inline input
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2,2));
-    if (ImGui::InputText("##inline_term", input_buf, IM_ARRAYSIZE(input_buf), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory,
-        [](ImGuiInputTextCallbackData* data)->int {
-            Terminal* term = reinterpret_cast<Terminal*>(data->UserData);
-            if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
-                if (data->EventKey == ImGuiKey_UpArrow) {
-                    if (!term->history.empty()) {
-                        if (term->history_pos == -1) term->history_pos = (int)term->history.size() - 1;
-                        else if (term->history_pos > 0) term->history_pos--;
-                        std::string h = term->history[term->history_pos];
-                        data->DeleteChars(0, data->BufTextLen);
-                        data->InsertChars(0, h.c_str());
-                    }
-                } else if (data->EventKey == ImGuiKey_DownArrow) {
-                    if (term->history_pos != -1) {
-                        term->history_pos++;
-                        if (term->history_pos >= (int)term->history.size()) {
-                            term->history_pos = -1;
-                            data->DeleteChars(0, data->BufTextLen);
-                        } else {
-                            std::string h = term->history[term->history_pos];
-                            data->DeleteChars(0, data->BufTextLen);
-                            data->InsertChars(0, h.c_str());
-                        }
-                    }
+    // Handle direct typing when focused
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
+        ImGuiIO& io = ImGui::GetIO();
+        for (int n = 0; n < io.InputQueueCharacters.Size; n++) {
+            ImWchar c = io.InputQueueCharacters[n];
+            if (c == '\r' || c == '\n') {
+                std::string line_text = get_plain_text(current_line);
+                push_current_line();
+                outgoing += "\n";
+                if (!line_text.empty()) {
+                    history.push_back(line_text);
+                    if (history.size() > 200) history.erase(history.begin());
                 }
+                history_pos = -1;
+            } else if (c == '\t') {
+                append_char(' ');
+                append_char(' ');
+                append_char(' ');
+                append_char(' ');
+                outgoing.push_back('\t');
+            } else if (c >= 0x20) {
+                append_char((char)c);
+                outgoing.push_back((char)c);
             }
-            return 0;
-        }, this)) {
-        std::string cmd = input_buf;
-        outgoing += cmd + "\n";
-        if (!cmd.empty()) {
-            history.push_back(cmd);
-            if (history.size() > 200) history.erase(history.begin());
         }
-        history_pos = -1;
-        input_buf[0] = '\0';
-        Feed(cmd + "\n");
-    }
-    ImGui::PopStyleVar();
-
-    // Copy selection
-    if (has_selection() && ImGui::GetIO().KeySuper && ImGui::IsKeyPressed(ImGuiKey_C)) {
-        copy_selection_to_clipboard(child_origin, line_height);
+        if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+            backspace();
+            outgoing.push_back('\b');
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            std::string line_text = get_plain_text(current_line);
+            push_current_line();
+            outgoing += "\n";
+            if (!line_text.empty()) {
+                history.push_back(line_text);
+                if (history.size() > 200) history.erase(history.begin());
+            }
+            history_pos = -1;
+        }
+        if (io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_C)) {
+            copy_selection_to_clipboard(child_origin, line_height, flat_lines);
+        }
+        if (io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_V)) {
+            const char* clip = ImGui::GetClipboardText();
+            if (clip) {
+                std::string pasted(clip);
+                for (char ch : pasted) {
+                    append_char(ch);
+                }
+                outgoing += pasted;
+            }
+        }
     }
 }

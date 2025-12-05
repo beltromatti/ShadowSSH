@@ -72,10 +72,10 @@ private:
     void apply_sgr(const std::vector<int>& codes);
     ImVec4 color_from_ansi(int code, bool bright) const;
     ImVec4 color_from_256(int code) const;
-    void handle_bracketed_paste(const std::string& data);
+    std::string strip_bracketed(const std::string& data);
     std::string get_plain_text(const Line& line) const;
     bool has_selection() const;
     void clear_selection();
-    void copy_selection_to_clipboard(const ImVec2& origin, float line_height);
-    int point_to_col(const std::string& text, float x, float glyph_w) const;
+    void copy_selection_to_clipboard(const ImVec2& origin, float line_height, const std::vector<std::string>& lines);
+    int point_to_col(const std::string& text, float x) const;
 };
