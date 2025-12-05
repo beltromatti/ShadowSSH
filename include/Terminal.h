@@ -3,6 +3,7 @@
 #include <deque>
 #include <string>
 #include <vector>
+#include <optional>
 
 // Lightweight ANSI-aware terminal view with scrollback and input editing.
 class Terminal {
@@ -42,6 +43,7 @@ private:
     };
 
     std::deque<Line> scrollback;
+    std::deque<std::string> plain;
     Line current_line;
     Style current_style;
 
@@ -55,6 +57,12 @@ private:
     std::vector<std::string> history;
     int history_pos = -1;
     std::string outgoing;
+    bool bracketed_paste = false;
+
+    // Selection
+    bool selecting = false;
+    std::optional<ImVec2> select_start;
+    std::optional<ImVec2> select_end;
 
     // Helpers
     void push_current_line();
@@ -64,4 +72,10 @@ private:
     void apply_sgr(const std::vector<int>& codes);
     ImVec4 color_from_ansi(int code, bool bright) const;
     ImVec4 color_from_256(int code) const;
+    void handle_bracketed_paste(const std::string& data);
+    std::string get_plain_text(const Line& line) const;
+    bool has_selection() const;
+    void clear_selection();
+    void copy_selection_to_clipboard(const ImVec2& origin, float line_height);
+    int point_to_col(const std::string& text, float x, float glyph_w) const;
 };
