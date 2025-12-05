@@ -59,6 +59,9 @@ add_executable(ShadowSSH ${PROJECT_SOURCES} ${IMGUI_SOURCES})
 
 # Link Libraries
 target_link_libraries(ShadowSSH PRIVATE ${LIBSSH_LIBRARIES} ${SDL2_LIBRARIES} ${FREETYPE_LIBRARIES})
+if(APPLE)
+    target_link_libraries(ShadowSSH PRIVATE "-framework Security")
+endif()
 
 # Include Directories
 include_directories(${LIBSSH_INCLUDE_DIR})
@@ -68,4 +71,3 @@ include_directories(vendor/imgui)
 include_directories(vendor/imgui/backends)
 include_directories(vendor/ImGuiColorTextEdit)
 include_directories(include)
-

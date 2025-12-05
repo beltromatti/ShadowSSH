@@ -3,8 +3,10 @@
 #include "imgui_impl_sdlrenderer2.h"
 #include "imgui_internal.h"
 #include "SSHConfigParser.h"
+#include "CredentialStore.h"
 #include <iostream>
 #include <algorithm>
+#include <filesystem>
 
 Application::Application() {
     // Load config
@@ -13,7 +15,10 @@ Application::Application() {
         std::string config_path = std::string(home) + "/.ssh/config";
         known_hosts = SSHConfigParser::parse_config_file(config_path);
         
-        std::string history_path = std::string(home) + "/.shadowssh_history";
+        history_path = std::string(home) + "/.shadowssh_history_v2";
+        std::filesystem::path old_history = std::string(home) + "/.shadowssh_history";
+        std::error_code ec;
+        std::filesystem::remove(old_history, ec); // purge legacy cleartext history
         history_hosts = SSHConfigParser::load_history(history_path);
     }
 }
@@ -169,6 +174,15 @@ void Application::RenderLogin() {
                 strcpy(host_input, history_hosts[i].hostname.c_str());
                 strcpy(user_input, history_hosts[i].user.c_str());
                 strcpy(port_input, history_hosts[i].port.c_str());
+                std::string saved_pass, saved_key;
+                if (CredentialStore::Load(history_hosts[i], saved_pass, saved_key)) {
+                    strncpy(pass_input, saved_pass.c_str(), sizeof(pass_input) - 1);
+                    pass_input[sizeof(pass_input) - 1] = '\0';
+                    strncpy(key_path_input, saved_key.c_str(), sizeof(key_path_input) - 1);
+                    key_path_input[sizeof(key_path_input) - 1] = '\0';
+                } else {
+                    pass_input[0] = '\0';
+                }
             }
             if (is_selected) ImGui::SetItemDefaultFocus();
         }
@@ -190,6 +204,17 @@ void Application::RenderLogin() {
                 strcpy(user_input, known_hosts[i].user.c_str());
                 strcpy(port_input, known_hosts[i].port.c_str());
                 strcpy(key_path_input, known_hosts[i].identity_file.c_str());
+                std::string saved_pass, saved_key;
+                if (CredentialStore::Load(known_hosts[i], saved_pass, saved_key)) {
+                    strncpy(pass_input, saved_pass.c_str(), sizeof(pass_input) - 1);
+                    pass_input[sizeof(pass_input) - 1] = '\0';
+                    if (!saved_key.empty()) {
+                        strncpy(key_path_input, saved_key.c_str(), sizeof(key_path_input) - 1);
+                        key_path_input[sizeof(key_path_input) - 1] = '\0';
+                    }
+                } else {
+                    pass_input[0] = '\0';
+                }
             }
             if (is_selected) ImGui::SetItemDefaultFocus();
         }
@@ -247,9 +272,10 @@ void Application::RenderLogin() {
         h.user = user_input;
         h.port = port_input;
         
-        const char* home = getenv("HOME");
-        if (home) {
-            SSHConfigParser::save_history(std::string(home) + "/.shadowssh_history", h);
+        CredentialStore::Save(h, pass_input, key_path_input);
+
+        if (!history_path.empty()) {
+            SSHConfigParser::save_history(history_path, h);
         }
     }
 
@@ -388,5 +414,3 @@ void Application::LaunchNativeTerminal() {
     system(osascript_cmd.c_str());
     terminal_launched = true;
 }
-
-

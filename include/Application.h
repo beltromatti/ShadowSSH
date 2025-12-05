@@ -36,6 +36,7 @@ private:
     SystemMonitor monitor; // Added
     std::vector<SSHHost> known_hosts;
     std::vector<SSHHost> history_hosts;
+    std::string history_path;
     
     // Login UI State
     char host_input[128] = "";
