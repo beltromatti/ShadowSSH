@@ -4,6 +4,9 @@
 #include "imgui_internal.h"
 #include "SSHConfigParser.h"
 #include "CredentialStore.h"
+#ifdef __APPLE__
+#include "MacMenu.h"
+#endif
 #include <iostream>
 #include <algorithm>
 #include <filesystem>
@@ -112,13 +115,25 @@ void Application::Run() {
             if (event.type == SDL_QUIT) running = false;
              if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
                 running = false;
+#ifdef __APPLE__
+            if (event.type == SDL_USEREVENT) {
+                switch (event.user.code) {
+                    case MacMenu_Launch: LaunchNativeTerminal(); break;
+                    case MacMenu_Relaunch: LaunchNativeTerminal(); break;
+                    case MacMenu_Clear: terminal.ClearScrollback(); break;
+                    case MacMenu_Reset: terminal.Reset(); shell_ready = false; break;
+                    case MacMenu_SendCtrlC: sshClient.send_shell_command("\x03"); break;
+                }
+            }
+#endif
         }
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
-        // Main menu bar (simulated mac menu)
+#ifndef __APPLE__
+        // Fallback menu bar for non-macOS
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("Terminal")) {
                 if (!terminal_launched) {
@@ -145,6 +160,9 @@ void Application::Run() {
             }
             ImGui::EndMainMenuBar();
         }
+#else
+        Mac_CreateOrUpdateTerminalMenu(terminal_launched);
+#endif
 
         // Dockspace
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");

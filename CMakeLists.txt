@@ -59,6 +59,9 @@ file(GLOB LIBVTERM_SOURCES
 )
 message(STATUS "Libvterm sources: ${LIBVTERM_SOURCES}")
 list(APPEND PROJECT_SOURCES ${LIBVTERM_SOURCES})
+if(APPLE)
+    list(APPEND PROJECT_SOURCES src/mac/MenuBridge.mm)
+endif()
 
 # Executable
 add_executable(ShadowSSH ${PROJECT_SOURCES} ${IMGUI_SOURCES})
@@ -66,7 +69,8 @@ add_executable(ShadowSSH ${PROJECT_SOURCES} ${IMGUI_SOURCES})
 # Link Libraries
 target_link_libraries(ShadowSSH PRIVATE ${LIBSSH_LIBRARIES} ${SDL2_LIBRARIES} ${FREETYPE_LIBRARIES})
 if(APPLE)
-    target_link_libraries(ShadowSSH PRIVATE "-framework Security" "-framework CoreFoundation")
+    target_link_libraries(ShadowSSH PRIVATE "-framework Security" "-framework CoreFoundation" "-framework Cocoa")
+    set_source_files_properties(src/mac/MenuBridge.mm PROPERTIES COMPILE_FLAGS "-ObjC++")
 endif()
 
 # Include Directories
