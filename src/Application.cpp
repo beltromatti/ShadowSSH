@@ -475,24 +475,19 @@ void Application::RenderFileBrowser() {
                     }
                     if (ImGui::MenuItem("Download")) {
                         std::string full_path = JoinPath(current_path, current_files[i].name);
-                        std::string content;
-                        bool ok = sftpClient.read_file(full_path, content);
                         std::string home = GetHomePath();
                         if (home.empty()) {
                             snprintf(status_msg, sizeof(status_msg), "Download failed: cannot resolve home path");
-                        } else if (!ok) {
-                            snprintf(status_msg, sizeof(status_msg), "Download failed: remote read error");
                         } else {
                             std::filesystem::path downloads_dir = std::filesystem::path(home) / "Downloads";
                             std::error_code ec;
                             std::filesystem::create_directories(downloads_dir, ec);
                             std::filesystem::path dst = downloads_dir / current_files[i].name;
-                            std::ofstream out(dst, std::ios::binary);
-                            if (out) {
-                                out.write(content.data(), content.size());
+                            bool ok = sftpClient.download_file(full_path, dst.string());
+                            if (ok) {
                                 snprintf(status_msg, sizeof(status_msg), "Downloaded to %s", dst.string().c_str());
                             } else {
-                                snprintf(status_msg, sizeof(status_msg), "Download failed: cannot write to %s", dst.string().c_str());
+                                snprintf(status_msg, sizeof(status_msg), "Download failed: transfer error");
                             }
                         }
                     }

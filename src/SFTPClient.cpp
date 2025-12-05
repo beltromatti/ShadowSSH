@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 SFTPClient::SFTPClient() {}
 
@@ -121,6 +122,43 @@ bool SFTPClient::write_file(const std::string& path, const std::string& content)
 
     if (session_mutex) session_mutex->unlock();
     return (nwritten == (ssize_t)content.size());
+}
+
+bool SFTPClient::download_file(const std::string& remote_path, const std::string& local_path) {
+    if (!sftp) return false;
+
+    std::lock_guard<std::mutex> local_lock(local_mutex);
+    if (session_mutex) session_mutex->lock();
+
+    sftp_file file = sftp_open(sftp, remote_path.c_str(), O_RDONLY, 0);
+    if (!file) {
+        if (session_mutex) session_mutex->unlock();
+        return false;
+    }
+
+    int fd = ::open(local_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        sftp_close(file);
+        if (session_mutex) session_mutex->unlock();
+        return false;
+    }
+
+    char buffer[4096];
+    ssize_t nread = 0;
+    bool ok = true;
+    while ((nread = sftp_read(file, buffer, sizeof(buffer))) > 0) {
+        ssize_t written = ::write(fd, buffer, nread);
+        if (written != nread) {
+            ok = false;
+            break;
+        }
+    }
+    if (nread < 0) ok = false;
+
+    ::close(fd);
+    sftp_close(file);
+    if (session_mutex) session_mutex->unlock();
+    return ok;
 }
 
 bool SFTPClient::delete_path(const std::string& path, bool is_dir) {

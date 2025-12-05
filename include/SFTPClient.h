@@ -24,6 +24,7 @@ public:
     std::string read_file(const std::string& path);
     bool write_file(const std::string& path, const std::string& content);
     bool delete_path(const std::string& path, bool is_dir);
+    bool download_file(const std::string& remote_path, const std::string& local_path);
 
     std::string get_current_path() { return current_path; }
     void set_current_path(const std::string& path) { current_path = path; }
