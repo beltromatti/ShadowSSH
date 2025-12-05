@@ -1,307 +1,290 @@
 #include "Terminal.h"
-#include "imgui.h"
-#include "imgui_internal.h"
-#include <sstream>
+#include <imgui_internal.h>
 #include <algorithm>
-#include <cmath>
+#include <sstream>
+#include <cctype>
+#include <cstring>
 
 Terminal::Terminal() {
-    // Init screen
-    screen.resize(rows);
-    for(auto& line : screen) line.resize(cols);
+    Reset();
+    input_buf[0] = '\0';
 }
 
-void Terminal::Write(const std::string& data) {
-    std::lock_guard<std::mutex> lock(mutex);
-    for (char c : data) {
-        uint32_t cp;
-        if (utf8.decode(c, cp)) {
-            ProcessCodepoint(cp);
-        }
+void Terminal::Reset() {
+    scrollback.clear();
+    current_line.segments.clear();
+    current_style = { ImVec4(0.85f, 0.85f, 0.85f, 1.0f), ImVec4(0.05f, 0.05f, 0.05f, 1.0f), false, false, false };
+    state = State::Text;
+    esc_buffer.clear();
+}
+
+void Terminal::Clear() {
+    scrollback.clear();
+    current_line.segments.clear();
+}
+
+void Terminal::push_current_line() {
+    scrollback.push_back(current_line);
+    if (scrollback.size() > max_scrollback) {
+        scrollback.pop_front();
     }
+    current_line.segments.clear();
 }
 
-void Terminal::ProcessCodepoint(uint32_t c) {
-    if (state == State::Text) {
-        if (c == 0x1B) { // ESC
-            state = State::Escape;
-        } else if (c == '\n') {
-            NewLine();
-        } else if (c == '\r') {
-            cursor_x = 0;
-        } else if (c == '\b') {
-            Backspace();
-        } else if (c == 0x07) { // BEL
-            // Flash?
-        } else if (c == '\t') {
-            int next_tab = (cursor_x / 8 + 1) * 8;
-            if (next_tab >= cols) next_tab = cols - 1;
-            while (cursor_x < next_tab) PutChar(' ');
-        } else if (c >= 32) {
-            PutChar(c);
-        }
-    } else if (state == State::Escape) {
-        if (c == '[') {
-            state = State::CSI;
-            param_buffer.clear();
-        } else if (c == ']') {
-            state = State::Osc;
-            param_buffer.clear();
-        } else {
-            state = State::Text; // Reset
-        }
-    } else if (state == State::CSI) {
-        if ((c >= '0' && c <= '9') || c == ';' || c == '?' || c == '>' || c == ' ') {
-            param_buffer += (char)c;
-        } else {
-            ExecuteCSI((char)c);
-            state = State::Text;
-        }
-    } else if (state == State::Osc) {
-        if (c == 0x07 || c == 0x1B) { // End on BEL or ESC
-             // Handle OSC if needed (Title etc)
-             state = State::Text;
-        }
-        // Consume
+void Terminal::append_char(char c) {
+    if (current_line.segments.empty() || memcmp(&current_line.segments.back().style, &current_style, sizeof(Style)) != 0) {
+        current_line.segments.push_back({ current_style, std::string(1, c) });
+    } else {
+        current_line.segments.back().text.push_back(c);
     }
 }
 
-void Terminal::ExecuteCSI(char cmd) {
-    std::vector<int> args;
-    std::stringstream ss(param_buffer);
-    std::string segment;
-    
-    bool private_mode = (!param_buffer.empty() && param_buffer[0] == '?');
-    // Strip ? or >
-    std::string clean_params = param_buffer;
-    if (!clean_params.empty() && (clean_params[0] == '?' || clean_params[0] == '>')) {
-        clean_params = clean_params.substr(1);
+void Terminal::backspace() {
+    if (current_line.segments.empty()) return;
+    auto& seg = current_line.segments.back();
+    if (!seg.text.empty()) {
+        seg.text.pop_back();
+        if (seg.text.empty()) current_line.segments.pop_back();
+    }
+}
+
+void Terminal::carriage_return() {
+    current_line.segments.clear();
+}
+
+void Terminal::apply_sgr(const std::vector<int>& codes) {
+    if (codes.empty()) {
+        // Reset
+        current_style = { ImVec4(0.85f,0.85f,0.85f,1.0f), ImVec4(0.05f,0.05f,0.05f,1.0f), false, false, false };
+        return;
     }
 
-    ss.str(clean_params);
-    while(std::getline(ss, segment, ';')) {
-        try {
-            if (!segment.empty()) args.push_back(std::stoi(segment));
-        } catch (...) {}
+    for (size_t i = 0; i < codes.size(); ++i) {
+        int c = codes[i];
+        if (c == 0) {
+            current_style = { ImVec4(0.85f,0.85f,0.85f,1.0f), ImVec4(0.05f,0.05f,0.05f,1.0f), false, false, false };
+        } else if (c == 1) {
+            current_style.bold = true;
+        } else if (c == 4) {
+            current_style.underline = true;
+        } else if (c == 7) {
+            current_style.inverse = true;
+        } else if (c >= 30 && c <= 37) {
+            current_style.fg = color_from_ansi(c - 30, false);
+        } else if (c >= 90 && c <= 97) {
+            current_style.fg = color_from_ansi(c - 90, true);
+        } else if (c == 39) {
+            current_style.fg = ImVec4(0.85f,0.85f,0.85f,1.0f);
+        } else if (c >= 40 && c <= 47) {
+            current_style.bg = color_from_ansi(c - 40, false);
+        } else if (c >= 100 && c <= 107) {
+            current_style.bg = color_from_ansi(c - 100, true);
+        } else if (c == 49) {
+            current_style.bg = ImVec4(0.05f,0.05f,0.05f,1.0f);
+        } else if (c == 38 || c == 48) {
+            // 256-color: 38;5;n or 48;5;n
+            if (i + 2 < codes.size() && codes[i+1] == 5) {
+                int code = codes[i+2];
+                ImVec4 col = color_from_256(code);
+                if (c == 38) current_style.fg = col;
+                else current_style.bg = col;
+                i += 2;
+            }
+        }
     }
-    if (args.empty()) args.push_back(0);
+}
 
-    switch (cmd) {
-        case 'm': // Color/Attribute
-            for (size_t i=0; i<args.size(); ++i) {
-                int code = args[i];
-                if (code == 38 && i+2 < args.size() && args[i+1] == 5) { // 256 Color FG
-                    current_fg = Get256Color(args[i+2]);
-                    i += 2;
-                } else if (code == 48 && i+2 < args.size() && args[i+1] == 5) { // 256 Color BG
-                    current_bg = Get256Color(args[i+2]);
-                    i += 2;
-                } else {
-                    SetColor(code);
+ImVec4 Terminal::color_from_ansi(int code, bool bright) const {
+    static const ImVec4 base[] = {
+        {0.0f, 0.0f, 0.0f, 1.0f},
+        {0.8f, 0.0f, 0.0f, 1.0f},
+        {0.0f, 0.6f, 0.0f, 1.0f},
+        {0.8f, 0.5f, 0.0f, 1.0f},
+        {0.0f, 0.0f, 0.8f, 1.0f},
+        {0.8f, 0.0f, 0.8f, 1.0f},
+        {0.0f, 0.6f, 0.6f, 1.0f},
+        {0.75f,0.75f,0.75f,1.0f}
+    };
+    ImVec4 c = base[std::clamp(code, 0, 7)];
+    if (bright) {
+        c.x = std::min(1.0f, c.x + 0.3f);
+        c.y = std::min(1.0f, c.y + 0.3f);
+        c.z = std::min(1.0f, c.z + 0.3f);
+    }
+    return c;
+}
+
+ImVec4 Terminal::color_from_256(int code) const {
+    if (code < 16) return color_from_ansi(code % 8, code >= 8);
+    if (code >= 16 && code <= 231) {
+        int idx = code - 16;
+        int r = (idx / 36) % 6;
+        int g = (idx / 6) % 6;
+        int b = idx % 6;
+        return ImVec4(r/5.0f, g/5.0f, b/5.0f, 1.0f);
+    }
+    // grayscale
+    float level = (code - 232) / 23.0f;
+    return ImVec4(level, level, level, 1.0f);
+}
+
+void Terminal::Feed(const std::string& data) {
+    for (char ch : data) {
+        unsigned char uc = static_cast<unsigned char>(ch);
+        switch (state) {
+            case State::Text:
+                if (uc == '\x1b') {
+                    state = State::Escape;
+                    esc_buffer.clear();
+                } else if (uc == '\n') {
+                    push_current_line();
+                } else if (uc == '\r') {
+                    carriage_return();
+                } else if (uc == '\b') {
+                    backspace();
+                } else if (uc == '\t') {
+                    append_char(' ');
+                    append_char(' ');
+                    append_char(' ');
+                    append_char(' ');
+                } else if (uc >= 0x20) {
+                    append_char(ch);
                 }
-            }
-            break;
-        case 'J': // Clear
-            if (args[0] == 2) {
-                 // Clear all: Move screen to history? No, just clear.
-                 // Standard Xterm: 2J clears screen, doesn't clear history.
-                 // 3J clears scrollback.
-                 for(auto& row : screen) std::fill(row.begin(), row.end(), TermCell{' ', current_fg, current_bg});
-                 cursor_x = 0; cursor_y = 0;
-            } else if (args[0] == 0) { // Cursor to end
-                 // Current line
-                 for(int x=cursor_x; x<cols; x++) screen[cursor_y][x] = {' ', current_fg, current_bg};
-                 // Next lines
-                 for(int y=cursor_y+1; y<rows; y++) 
-                     std::fill(screen[y].begin(), screen[y].end(), TermCell{' ', current_fg, current_bg});
-            }
-            break;
-        case 'K': // Clear Line
-            if (args[0] == 0) { // Cursor to end
-                 for(int x=cursor_x; x<cols; x++) screen[cursor_y][x] = {' ', current_fg, current_bg};
-            } else if (args[0] == 1) { // Start to cursor
-                 for(int x=0; x<=cursor_x; x++) screen[cursor_y][x] = {' ', current_fg, current_bg};
-            } else { // All
-                 std::fill(screen[cursor_y].begin(), screen[cursor_y].end(), TermCell{' ', current_fg, current_bg});
-            }
-            break;
-        case 'A': cursor_y = std::max(0, cursor_y - (args[0]?args[0]:1)); break;
-        case 'B': cursor_y = std::min(rows-1, cursor_y + (args[0]?args[0]:1)); break;
-        case 'C': cursor_x = std::min(cols-1, cursor_x + (args[0]?args[0]:1)); break;
-        case 'D': cursor_x = std::max(0, cursor_x - (args[0]?args[0]:1)); break;
-        case 'H': // Pos
-        case 'f':
-             if (args.size() >= 2) {
-                 cursor_y = std::min(rows-1, std::max(0, args[0] - 1));
-                 cursor_x = std::min(cols-1, std::max(0, args[1] - 1));
-             } else { cursor_y = 0; cursor_x = 0; }
-             break;
-        case 'n': // DSR
-            if (args[0] == 6) {
-                // Response
-                input_queue += "\033[" + std::to_string(cursor_y + 1) + ";" + std::to_string(cursor_x + 1) + "R";
-            }
-            break;
-        case 'h':
-            if (private_mode && args[0] == 25) cursor_visible = true;
-            break;
-        case 'l':
-             if (private_mode && args[0] == 25) cursor_visible = false;
-             break;
+                break;
+            case State::Escape:
+                if (uc == '[') {
+                    state = State::CSI;
+                } else if (uc == ']') {
+                    state = State::OSC;
+                } else {
+                    state = State::Text;
+                }
+                break;
+            case State::CSI:
+                if ((uc >= '0' && uc <= '9') || uc == ';') {
+                    esc_buffer.push_back(ch);
+                } else {
+                    // parse buffer
+                    std::vector<int> codes;
+                    std::stringstream ss(esc_buffer);
+                    std::string seg;
+                    while (std::getline(ss, seg, ';')) {
+                        if (!seg.empty()) codes.push_back(std::stoi(seg));
+                    }
+                    if (uc == 'm') {
+                        apply_sgr(codes);
+                    } else if (uc == 'K') {
+                        // clear line: drop current
+                        carriage_return();
+                    } else if (uc == 'J') {
+                        // clear screen
+                        Clear();
+                    } else if (uc == 'G' || uc == '`' || uc == 'D' || uc == 'C' || uc == 'A' || uc == 'B') {
+                        // basic cursor moves not fully simulated; ignore safely
+                    }
+                    esc_buffer.clear();
+                    state = State::Text;
+                }
+                break;
+            case State::OSC:
+                // consume until bell or ESC
+                if (uc == 0x07 || uc == '\x1b') {
+                    esc_buffer.clear();
+                    state = State::Text;
+                }
+                break;
+        }
     }
 }
 
-void Terminal::PutChar(uint32_t c) {
-    if (cursor_x >= cols) {
-        cursor_x = 0;
-        NewLine();
-    }
-    screen[cursor_y][cursor_x] = {c, current_fg, current_bg};
-    cursor_x++;
-}
-
-void Terminal::NewLine() {
-    cursor_y++;
-    if (cursor_y >= rows) {
-        Scroll();
-        cursor_y = rows - 1;
-    }
-}
-
-void Terminal::Scroll() {
-    scrollback.push_back(screen[0]);
-    if (scrollback.size() > 5000) scrollback.pop_front();
-    
-    for (int y = 0; y < rows - 1; y++) {
-        screen[y] = screen[y+1];
-    }
-    screen[rows-1].assign(cols, {' ', current_fg, current_bg});
-}
-
-void Terminal::Backspace() {
-    if (cursor_x > 0) cursor_x--;
-}
-
-void Terminal::SetColor(int code) {
-    if (code == 0) { current_fg = 0xFFD0D0D0; current_bg = 0xFF101010; }
-    else if (code >= 30 && code <= 37) {
-         const uint32_t colors[] = { 0xFF000000, 0xFF0000AA, 0xFF00AA00, 0xFF00AAAA, 0xFFAA0000, 0xFFAA00AA, 0xFFAAAA00, 0xFFAAAAAA };
-         current_fg = colors[code-30];
-    } else if (code >= 40 && code <= 47) {
-         const uint32_t colors[] = { 0xFF000000, 0xFF0000AA, 0xFF00AA00, 0xFF00AAAA, 0xFFAA0000, 0xFFAA00AA, 0xFFAAAA00, 0xFFAAAAAA };
-         current_bg = colors[code-40];
-    }
-    // ... Add Bright colors
-}
-
-uint32_t Terminal::Get256Color(int code) {
-    // Basic implementation of Xterm 256 color palette mapping
-    if (code < 16) return 0xFFFFFFFF; // Simplify for prototype
-    return 0xFFFFFFFF; 
-}
-
-std::string Terminal::CheckInput() {
-    std::lock_guard<std::mutex> lock(mutex);
-    std::string out = input_queue;
-    input_queue.clear();
+std::string Terminal::ConsumeOutgoing() {
+    std::string out = outgoing;
+    outgoing.clear();
     return out;
 }
 
-void Terminal::Draw(const char* title, float width, float height) {
-    ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoScrollbar);
-    
-    std::lock_guard<std::mutex> lock(mutex);
-    
-    float char_height = ImGui::GetTextLineHeight();
-    long total_lines = scrollback.size() + rows;
-    
-    // Use Clipper for performant scrolling of history
-    ImGuiListClipper clipper;
-    clipper.Begin(total_lines, char_height);
-    
-    // We need to handle input globally for the window
-    if (ImGui::IsWindowFocused()) {
-         ImGuiIO& io = ImGui::GetIO();
-         if (io.InputQueueCharacters.Size > 0) {
-             for (int i = 0; i < io.InputQueueCharacters.Size; i++) {
-                 char c = (char)io.InputQueueCharacters[i];
-                 input_queue += c;
-             }
-         }
-         if (ImGui::IsKeyPressed(ImGuiKey_Enter)) input_queue += "\n";
-         if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) input_queue += "\b";
-         if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) input_queue += "\033[A";
-         if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) input_queue += "\033[B";
-         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) input_queue += "\033[D";
-         if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) input_queue += "\033[C";
-         if (ImGui::IsKeyPressed(ImGuiKey_Tab)) input_queue += "\t";
-         if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C)) input_queue += "\x03";
-    }
+void Terminal::Render() {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, current_style.bg);
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    float input_height = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().FramePadding.y * 2;
+    ImGui::BeginChild("scroll_region", ImVec2(avail.x, avail.y - input_height - ImGui::GetStyle().ItemSpacing.y), false, ImGuiWindowFlags_HorizontalScrollbar);
 
-    while (clipper.Step()) {
-        for (int y = clipper.DisplayStart; y < clipper.DisplayEnd; y++) {
-             const auto& line = (y < scrollback.size()) ? scrollback[y] : screen[y - scrollback.size()];
-             
-             // Render line
-             // Optimization: Instead of drawing rects, we construct strings for same-colored segments
-             // This is much faster and allows proper font kerning.
-             
-             // Simple fallback for now: Draw Text.
-             // We need to position cursor manually because we are in a Clipper
-             ImVec2 pos = ImGui::GetCursorScreenPos();
-             // But Clipper just spaces out the dummy area.
-             // We should draw relative to window pos + scroll.
-             // Actually, standard ImGui usage with clipper implies we use Text() calls.
-             
-             std::string line_text;
-             // Just dumping text ignores colors. We need horizontal loop.
-             // Let's try the color span approach again.
-             
-             for (int x = 0; x < cols; x++) {
-                 const auto& cell = line[x];
-                 ImGui::PushStyleColor(ImGuiCol_Text, cell.fg);
-                 
-                 // Background?
-                 if (cell.bg != 0xFF101010) { // Not default
-                     // Draw BG rect
-                     ImVec2 p = ImGui::GetCursorScreenPos();
-                     ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + ImGui::CalcTextSize("M").x, p.y + char_height), cell.bg);
-                 }
-                 
-                 char utf8_buf[5] = {0};
-                 if (cell.codepoint <= 0x7F) utf8_buf[0] = (char)cell.codepoint;
-                 else { 
-                     // Naive re-encode or just use replacement. 
-                     // ImGui handles UTF8 text, but our codepoint is uint32. 
-                     // We need to encode it back to utf8 char* for ImGui::Text.
-                     // Or use AddText with codepoint.
-                     // ImGui doesn't expose AddText(codepoint) publicly in simple API.
-                     // We can just cast if < 255, but for Box Drawing we need proper encoding.
-                     // Minimal encode:
-                     if (cell.codepoint < 0x80) {
-                         utf8_buf[0] = (char)cell.codepoint;
-                     } else if (cell.codepoint < 0x800) {
-                         utf8_buf[0] = (char)(0xC0 | (cell.codepoint >> 6));
-                         utf8_buf[1] = (char)(0x80 | (cell.codepoint & 0x3F));
-                     } else if (cell.codepoint < 0x10000) {
-                         utf8_buf[0] = (char)(0xE0 | (cell.codepoint >> 12));
-                         utf8_buf[1] = (char)(0x80 | ((cell.codepoint >> 6) & 0x3F));
-                         utf8_buf[2] = (char)(0x80 | (cell.codepoint & 0x3F));
-                     }
-                 }
-                 
-                 ImGui::TextUnformatted(utf8_buf);
-                 ImGui::SameLine(0,0);
-                 ImGui::PopStyleColor();
-             }
-             ImGui::NewLine();
+    long total_lines = static_cast<long>(scrollback.size()) + 1; // include current
+    ImGuiListClipper clip;
+    clip.Begin(total_lines);
+    while (clip.Step()) {
+        for (int idx = clip.DisplayStart; idx < clip.DisplayEnd; ++idx) {
+            const Line* line;
+            if (idx < (int)scrollback.size()) line = &scrollback[idx];
+            else line = &current_line;
+
+            ImGui::PushID(idx);
+            bool first = true;
+            for (const auto& seg : line->segments) {
+                if (!first) ImGui::SameLine(0, 0);
+                first = false;
+                ImVec4 fg = seg.style.inverse ? seg.style.bg : seg.style.fg;
+                ImVec4 bg = seg.style.inverse ? seg.style.fg : seg.style.bg;
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+                float text_height = ImGui::GetTextLineHeight();
+                ImVec2 size = ImGui::CalcTextSize(seg.text.c_str());
+                if (bg.w > 0.9f && (bg.x > 0.08f || bg.y > 0.08f || bg.z > 0.08f)) {
+                    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + text_height), ImGui::ColorConvertFloat4ToU32(bg));
+                }
+                ImGui::PushStyleColor(ImGuiCol_Text, fg);
+                ImGui::TextUnformatted(seg.text.c_str());
+                ImGui::PopStyleColor();
+            }
+            ImGui::NewLine();
+            ImGui::PopID();
         }
     }
-    
-    // Auto-scroll logic
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - char_height * 2) {
-        ImGui::SetScrollHereY(1.0f);
+    ImGui::SetScrollHereY(1.0f);
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::Separator();
+    ImGui::PushItemWidth(avail.x);
+    if (ImGui::InputTextWithHint("##term_input", "Type command and press Enter", input_buf, IM_ARRAYSIZE(input_buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+        std::string cmd = input_buf;
+        outgoing += cmd + "\n";
+        if (!cmd.empty()) {
+            history.push_back(cmd);
+            if (history.size() > 200) history.erase(history.begin());
+        }
+        history_pos = -1;
+        input_buf[0] = '\0';
     }
 
-    ImGui::End();
+    // History navigation
+    if (ImGui::IsItemActive()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && !history.empty()) {
+            if (history_pos == -1) history_pos = (int)history.size() - 1;
+            else if (history_pos > 0) history_pos--;
+            strncpy(input_buf, history[history_pos].c_str(), sizeof(input_buf));
+            input_buf[sizeof(input_buf) - 1] = '\0';
+        } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && history_pos != -1) {
+            history_pos++;
+            if (history_pos >= (int)history.size()) {
+                history_pos = -1;
+                input_buf[0] = '\0';
+            } else {
+                strncpy(input_buf, history[history_pos].c_str(), sizeof(input_buf));
+                input_buf[sizeof(input_buf) - 1] = '\0';
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Send Ctrl+C")) {
+        outgoing += "\x03";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) {
+        Clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset")) {
+        Reset();
+    }
 }

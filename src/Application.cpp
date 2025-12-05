@@ -117,6 +117,34 @@ void Application::Run() {
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
+        // Main menu bar (simulated mac menu)
+        if (ImGui::BeginMainMenuBar()) {
+            if (ImGui::BeginMenu("Terminal")) {
+                if (!terminal_launched) {
+                    if (ImGui::MenuItem("Launch Native Terminal")) {
+                        LaunchNativeTerminal();
+                    }
+                } else {
+                    if (ImGui::MenuItem("Relaunch Native Terminal")) {
+                        LaunchNativeTerminal();
+                    }
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Clear In-App Terminal")) {
+                    terminal.Clear();
+                }
+                if (ImGui::MenuItem("Reset In-App Terminal")) {
+                    terminal.Reset();
+                    shell_ready = false;
+                }
+                if (ImGui::MenuItem("Send Ctrl+C to Shell")) {
+                    sshClient.send_shell_command("\x03");
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+
         // Dockspace
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
         ImGui::DockSpaceOverViewport(dockspace_id, ImGui::GetMainViewport());
@@ -264,6 +292,8 @@ void Application::RenderLogin() {
         files_need_refresh = true;
         sftpClient.init(sshClient.get_session(), &sshClient.get_mutex());
         monitor.Start(host_input, atoi(port_input), user_input, pass_input, key_path_input);
+        shell_ready = false;
+        terminal.Reset();
         
         // Save to history
         SSHHost h;
@@ -286,9 +316,7 @@ void Application::RenderWorkspace() {
     RenderFileBrowser();
     RenderEditor();
     
-    // Tabs are handled by Docking (Terminal and System Monitor windows)
-
-    RenderTerminalPlaceholder();
+    RenderTerminal();
     monitor.Render(); 
 }
 
@@ -365,20 +393,43 @@ void Application::RenderEditor() {
     ImGui::End();
 }
 
-void Application::RenderTerminalPlaceholder() {
+void Application::RenderTerminal() {
     ImGui::Begin("Terminal");
-    ImGui::TextWrapped("Terminal functionality is handled by the native macOS Terminal app.");
-    
-    if (state == AppState::CONNECTED && !terminal_launched) {
-        if (ImGui::Button("Launch Terminal Session")) {
-            LaunchNativeTerminal();
-        }
-    } else if (terminal_launched) {
-         ImGui::TextColored(ImVec4(0,1,0,1), "Terminal Session Launched.");
-         if (ImGui::Button("Relaunch")) {
-             LaunchNativeTerminal();
-         }
+
+    if (state != AppState::CONNECTED) {
+        ImGui::TextDisabled("Connect to a server to use the in-app terminal.");
+        ImGui::End();
+        return;
     }
+
+    if (!shell_ready) {
+        if (sshClient.init_shell()) {
+            shell_ready = true;
+        } else {
+            ImGui::TextColored(ImVec4(1,0.5f,0.5f,1), "Shell not ready. Check authentication.");
+            if (ImGui::Button("Retry Shell Init")) {
+                shell_ready = sshClient.init_shell();
+            }
+            ImGui::End();
+            return;
+        }
+    }
+
+    // Pull remote output
+    std::string chunk = sshClient.read_shell_output();
+    while (!chunk.empty()) {
+        terminal.Feed(chunk);
+        chunk = sshClient.read_shell_output();
+    }
+
+    terminal.Render();
+
+    // Send user input
+    std::string outgoing = terminal.ConsumeOutgoing();
+    if (!outgoing.empty()) {
+        sshClient.send_shell_command(outgoing);
+    }
+
     ImGui::End();
 }
 

@@ -6,6 +6,7 @@
 #include "SSHConfigParser.h"
 #include "SystemMonitor.h" // Added
 #include "EditorManager.h" // Added
+#include "Terminal.h"
 #include <vector>
 #include <string>
 
@@ -55,8 +56,9 @@ private:
     // Editor State
     EditorManager editorManager;
 
-    // Terminal State - Now Handled externally
-    char term_cmd_buffer[256] = "";
+    // Terminal State
+    Terminal terminal;
+    bool shell_ready = false;
 
     // Helpers
     void ApplyDarkTheme();
@@ -64,7 +66,7 @@ private:
     void RenderWorkspace();
     void RenderFileBrowser();
     void RenderEditor();
-    void RenderTerminalPlaceholder();
+    void RenderTerminal();
     void RenderMonitor(); // Added
     
     void RefreshFileList();
