@@ -60,7 +60,7 @@ add_executable(ShadowSSH ${PROJECT_SOURCES} ${IMGUI_SOURCES})
 # Link Libraries
 target_link_libraries(ShadowSSH PRIVATE ${LIBSSH_LIBRARIES} ${SDL2_LIBRARIES} ${FREETYPE_LIBRARIES})
 if(APPLE)
-    target_link_libraries(ShadowSSH PRIVATE "-framework Security")
+    target_link_libraries(ShadowSSH PRIVATE "-framework Security" "-framework CoreFoundation")
 endif()
 
 # Include Directories

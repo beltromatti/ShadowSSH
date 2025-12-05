@@ -243,7 +243,9 @@ bool SSHClient::verify_known_host() {
             return true;
         case SSH_KNOWN_HOSTS_CHANGED:
         case SSH_KNOWN_HOSTS_OTHER:
+#ifdef SSH_KNOWN_HOSTS_REVOKED
         case SSH_KNOWN_HOSTS_REVOKED:
+#endif
             set_error("Host key mismatch or revoked. Connection aborted.");
             ssh_disconnect(my_session);
             return false;
