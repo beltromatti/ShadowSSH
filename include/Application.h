@@ -50,8 +50,14 @@ private:
     // File Browser State
     std::vector<RemoteFile> current_files;
     std::string current_path = ".";
+    std::vector<std::string> path_history;
+    int history_index = -1;
     bool files_need_refresh = false;
     int selected_file_index = -1;
+    // Upload picker state
+    std::string pending_upload_path;
+    bool upload_picker_running = false;
+    bool upload_ready = false;
 
     // Editor State
     EditorManager editorManager;

@@ -7,6 +7,9 @@
 #ifdef __APPLE__
 #include "MacMenu.h"
 #endif
+#include <fstream>
+#include <cstdio>
+#include <thread>
 #include <iostream>
 #include <algorithm>
 #include <filesystem>
@@ -328,6 +331,9 @@ void Application::RenderLogin() {
         files_need_refresh = true;
         sftpClient.init(sshClient.get_session(), &sshClient.get_mutex());
         monitor.Start(host_input, atoi(port_input), user_input, pass_input, key_path_input);
+        path_history.clear();
+        path_history.push_back(current_path);
+        history_index = 0;
         shell_ready = false;
         terminal.Reset();
         
@@ -356,6 +362,29 @@ void Application::RenderWorkspace() {
     monitor.Render(); 
 }
 
+static std::string Trim(const std::string& s) {
+    size_t start = s.find_first_not_of(" \n\r\t");
+    size_t end = s.find_last_not_of(" \n\r\t");
+    if (start == std::string::npos) return "";
+    return s.substr(start, end - start + 1);
+}
+
+static std::string PickLocalFile() {
+#ifdef __APPLE__
+    std::string result;
+    FILE* pipe = popen("osascript -e 'tell application \"System Events\" to POSIX path of (choose file)'", "r");
+    if (!pipe) return "";
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        result += buffer;
+    }
+    pclose(pipe);
+    return Trim(result);
+#else
+    return "";
+#endif
+}
+
 void Application::RenderFileBrowser() {
     ImGui::Begin("File Browser");
     if (files_need_refresh) {
@@ -363,17 +392,56 @@ void Application::RenderFileBrowser() {
         files_need_refresh = false;
     }
     // Navigation Header
-    if (ImGui::Button("Up") || (ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_Backspace))) {
-        if (current_path != "/" && !current_path.empty()) {
-            size_t last_slash = current_path.find_last_of('/');
-            if (last_slash == 0) current_path = "/";
-            else if (last_slash != std::string::npos) current_path = current_path.substr(0, last_slash);
-            else current_path = "/";
+    if (ImGui::Button("<")) {
+        if (history_index > 0) {
+            history_index--;
+            current_path = path_history[history_index];
+            files_need_refresh = true;
+        } else if (current_path != "/") {
+            // push root and navigate
+            path_history.insert(path_history.begin(), "/");
+            history_index = 0;
+            current_path = "/";
+            files_need_refresh = true;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(">")) {
+        if (history_index + 1 < (int)path_history.size()) {
+            history_index++;
+            current_path = path_history[history_index];
             files_need_refresh = true;
         }
     }
     ImGui::SameLine();
     ImGui::Text("Path: %s", current_path.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Upload")) {
+        if (!upload_picker_running) {
+            upload_picker_running = true;
+            std::thread([this]() {
+                std::string local = PickLocalFile();
+                pending_upload_path = local;
+                upload_ready = true;
+                upload_picker_running = false;
+            }).detach();
+        }
+    }
+    if (upload_ready) {
+        upload_ready = false;
+        std::string local = pending_upload_path;
+        pending_upload_path.clear();
+        if (!local.empty()) {
+            std::ifstream in(local, std::ios::binary);
+            if (in) {
+                std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                std::string filename = std::filesystem::path(local).filename().string();
+                std::string remote_path = (current_path == "/") ? "/" + filename : current_path + "/" + filename;
+                sftpClient.write_file(remote_path, content);
+                files_need_refresh = true;
+            }
+        }
+    }
     ImGui::Separator();
 
     if (ImGui::BeginTable("Files", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY)) {
@@ -393,17 +461,62 @@ void Application::RenderFileBrowser() {
 
             std::string label = (current_files[i].is_dir ? "[D] " : "[F] ") + current_files[i].name;
             bool is_selected = (selected_file_index == i);
-            if (ImGui::Selectable(label.c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (ImGui::Selectable(label.c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick | ImGuiSelectableFlags_AllowOverlap)) {
                 selected_file_index = i;
                 if (ImGui::IsMouseDoubleClicked(0)) {
                     if (current_files[i].is_dir) {
-                        if (current_path.back() != '/') current_path += "/";
-                        current_path += current_files[i].name;
+                        std::string next = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        // update history
+                        if (history_index + 1 < (int)path_history.size()) {
+                            path_history.erase(path_history.begin() + history_index + 1, path_history.end());
+                        }
+                        path_history.push_back(next);
+                        history_index = (int)path_history.size() - 1;
+                        current_path = next;
                         files_need_refresh = true;
                     } else {
                         OpenFile(current_files[i].name);
                     }
                 }
+            }
+            if (ImGui::BeginPopupContextItem()) {
+                if (!current_files[i].is_dir) {
+                    if (ImGui::MenuItem("Open")) {
+                        OpenFile(current_files[i].name);
+                    }
+                    if (ImGui::MenuItem("Download")) {
+                        std::string full_path = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        std::string content = sftpClient.read_file(full_path);
+                        const char* home = getenv("HOME");
+                        if (home) {
+                            std::filesystem::path dst = std::filesystem::path(home) / "Downloads" / current_files[i].name;
+                            std::ofstream out(dst, std::ios::binary);
+                            out.write(content.data(), content.size());
+                        }
+                    }
+                    if (ImGui::MenuItem("Delete")) {
+                        std::string full_path = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        sftpClient.delete_path(full_path, false);
+                        files_need_refresh = true;
+                    }
+                } else {
+                    if (ImGui::MenuItem("Open Folder")) {
+                        std::string next = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        if (history_index + 1 < (int)path_history.size()) {
+                            path_history.erase(path_history.begin() + history_index + 1, path_history.end());
+                        }
+                        path_history.push_back(next);
+                        history_index = (int)path_history.size() - 1;
+                        current_path = next;
+                        files_need_refresh = true;
+                    }
+                    if (ImGui::MenuItem("Delete")) {
+                        std::string full_path = (current_path == "/") ? "/" + current_files[i].name : current_path + "/" + current_files[i].name;
+                        sftpClient.delete_path(full_path, true);
+                        files_need_refresh = true;
+                    }
+                }
+                ImGui::EndPopup();
             }
             ImGui::TableNextColumn();
             if (!current_files[i].is_dir) {

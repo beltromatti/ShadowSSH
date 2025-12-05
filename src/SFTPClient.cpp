@@ -116,3 +116,12 @@ bool SFTPClient::write_file(const std::string& path, const std::string& content)
     if (session_mutex) session_mutex->unlock();
     return (nwritten == (ssize_t)content.size());
 }
+
+bool SFTPClient::delete_path(const std::string& path, bool is_dir) {
+    if (!sftp) return false;
+    std::lock_guard<std::mutex> local_lock(local_mutex);
+    if (session_mutex) session_mutex->lock();
+    int rc = is_dir ? sftp_rmdir(sftp, path.c_str()) : sftp_unlink(sftp, path.c_str());
+    if (session_mutex) session_mutex->unlock();
+    return rc == SSH_OK;
+}
