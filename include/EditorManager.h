@@ -1,8 +1,9 @@
 #pragma once
 #include "TextEditor.h"
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 
 struct EditorTab {
     std::string filename;

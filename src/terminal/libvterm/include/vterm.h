@@ -9,6 +9,12 @@ extern "C" {
 #include <stdlib.h>
 #include <stdbool.h>
 
+/* On MSVC, <rpcndr.h> (pulled in via <windows.h>) defines `small` as a macro
+ * that expands to `char`, which clashes with our `small : 1` bitfield below. */
+#ifdef small
+#  undef small
+#endif
+
 #include "vterm_keycodes.h"
 
 #define VTERM_VERSION_MAJOR 0
