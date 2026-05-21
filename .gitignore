@@ -37,6 +37,7 @@ Testing/
 # ---------- Editors / IDEs -------------------------------------------------
 .vscode/
 .idea/
+.claude/
 *.user
 *.suo
 *.userosscache
