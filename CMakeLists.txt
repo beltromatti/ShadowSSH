@@ -188,6 +188,10 @@ if(APPLE)
         target_sources(ShadowSSH PRIVATE "${CMAKE_SOURCE_DIR}/assets/icon/ShadowSSH.icns")
     endif()
 elseif(WIN32)
+    # SDL2's WIN32 subsystem mode requires SDL2main as the entry point.
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(ShadowSSH PRIVATE SDL2::SDL2main)
+    endif()
     target_link_libraries(ShadowSSH PRIVATE
         ws2_32 crypt32 secur32 advapi32 user32 gdi32 shell32 comdlg32 ole32)
     if(MSVC)
