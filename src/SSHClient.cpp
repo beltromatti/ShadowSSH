@@ -1,4 +1,6 @@
 #include "SSHClient.h"
+#include "Platform.h"
+#include <filesystem>
 #include <iostream>
 #include <cstdlib>
 
@@ -60,9 +62,10 @@ void SSHClient::connect(const std::string& hostname, int port) {
         close_shell_channel();
         authenticated_flag = false;
 
-        const char* home = getenv("HOME");
-        if (home) {
-            std::string known_hosts = std::string(home) + "/.ssh/known_hosts";
+        std::string home = Platform::GetHomeDir();
+        if (!home.empty()) {
+            std::string known_hosts =
+                (std::filesystem::path(home) / ".ssh" / "known_hosts").string();
             ssh_options_set(my_session, SSH_OPTIONS_KNOWNHOSTS, known_hosts.c_str());
         }
 #ifdef SSH_OPTIONS_STRICTHOSTKEYCHECK

@@ -1,43 +1,91 @@
+<div align="center">
+
+<img src="assets/icon/appicon-256.png" width="128" alt="ShadowSSH" />
+
 # ShadowSSH
 
-ShadowSSH is a modern, macOS-focused SSH client built with SDL2 + ImGui. It combines a dark, dockable UI with an in-app terminal powered by libvterm, SFTP browsing/editing, and live system monitoring.
+**A fast, lightweight, private SSH client for developers — cross-platform, plug-and-play.**
 
-## Features
-- **Native Terminal Experience**: libvterm-based VT emulation with colors, cursor, selection, copy/paste (Cmd+C/V), control shortcuts (^C/^Z/^D), bracketed paste, scrollback, and macOS menu entries for launch/relaunch/clear/reset.
-- **SFTP Browser**: Navigate remote directories, double-click to open files, upload on save, and track history.
-- **Integrated Editor**: Tabbed ImGuiColorTextEdit with syntax highlighting for common extensions, dirty-state handling, Cmd+S to save/upload.
-- **System Monitor**: Live load/CPU, memory, disk, and network stats via a dedicated SSH connection.
-- **SSH Config & History**: Auto-load `~/.ssh/config`, remember recent connections (stored at `~/.shadowssh_history_v2`), and pull credentials from the macOS Keychain.
-- **Native Terminal.app Launcher**: One-click launch (or relaunch) of a native Terminal session with your current host settings.
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/beltromatti/ShadowSSH?color=informational)](https://github.com/beltromatti/ShadowSSH/releases)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#downloads)
+[![CI](https://github.com/beltromatti/ShadowSSH/actions/workflows/release.yml/badge.svg)](https://github.com/beltromatti/ShadowSSH/actions)
 
-## Requirements
-- macOS (tested on Apple Silicon)
-- CMake
-- libssh
-- SDL2
-- Freetype
+<img src="assets/shadowssh.png" width="780" alt="ShadowSSH screenshot" />
+
+</div>
+
+---
+
+## Why ShadowSSH
+
+Every other GUI SSH client is bloated, slow, or ships your sessions through someone else's cloud. **ShadowSSH is the opposite.** A single native binary, no telemetry, no account, no internet round-trip. Open it, connect, work — that's it.
+
+Built on **SDL2 + Dear ImGui + libssh + libvterm**, it boots instantly, draws a real terminal locally, and stays out of your way.
+
+## Highlights
+
+- **Native everywhere** — macOS (Apple Silicon & Intel), Linux (x64 & ARM64), Windows (x64). Same UI, same shortcuts, same speed.
+- **In-app VT terminal** — libvterm emulation with colors, scrollback, selection, copy/paste, control codes (^C/^Z/^D).
+- **SFTP file browser & editor** — browse, open, edit with syntax highlighting, save-uploads in one keystroke.
+- **Live system monitor** — CPU, load, memory, disk, network on a dedicated SSH channel.
+- **Zero config** — auto-loads `~/.ssh/config`, remembers recent hosts, pulls credentials from the OS keystore (Keychain / DPAPI / secured file).
+- **Strict host-key checking** — known hosts only. No "type yes to ignore" prompts.
+- **One-click native terminal launch** — drops you into Terminal.app / Windows Terminal / your `$TERMINAL` of choice.
+
+## Downloads
+
+Grab the release for your platform from the [Releases page](https://github.com/beltromatti/ShadowSSH/releases/latest):
+
+| Platform              | Artifact                                  |
+| --------------------- | ----------------------------------------- |
+| macOS (Apple Silicon) | `ShadowSSH-<v>-macos-arm64.tar.gz`        |
+| macOS (Intel)         | `ShadowSSH-<v>-macos-x64.tar.gz`          |
+| Linux x86_64          | `ShadowSSH-<v>-linux-x64.tar.gz`          |
+| Linux ARM64           | `ShadowSSH-<v>-linux-arm64.tar.gz`        |
+| Windows x86_64        | `ShadowSSH-<v>-windows-x64.zip`           |
+
+## Build from source
+
+Install the runtime libraries — `libssh`, `SDL2`, `freetype` — then:
 
 ```bash
-brew install cmake libssh sdl2 freetype
+git clone https://github.com/beltromatti/ShadowSSH.git
+cd ShadowSSH
+./scripts/build.sh --version 1.1.0 --target macos-arm64
 ```
 
-## Build
-```bash
-mkdir build
-cd build
-cmake ..
-make
-```
+`scripts/build.sh` is the single entry point for every target. Omit `--target` to build all available targets sequentially. Omit `--version` for `0.0.0`. The chosen version is baked into the binary, `.app` bundle, and archive name.
 
-## Run
-- App bundle: `./build_and_deploy.sh` creates `ShadowSSH.app` in the project root.
-- Binary: `build/ShadowSSH`
+## Shortcuts
 
-## Key Shortcuts
-- Terminal: Cmd+C/Cmd+V to copy/paste selection; Ctrl+C/Z/D send control codes; selection via mouse drag; right-click for context copy/paste.
-- Editor: Cmd+S to save/upload active tab; Cmd+C/V obey macOS behaviors.
+| Action                     | macOS         | Linux / Windows |
+| -------------------------- | ------------- | --------------- |
+| Save active editor tab     | ⌘ S           | Ctrl + S        |
+| Copy terminal selection    | Ctrl + C      | Ctrl + C        |
+| Paste into terminal        | Ctrl + V      | Ctrl + V        |
+| Send Ctrl+C / Ctrl+Z / etc | Terminal menu | Terminal menu   |
 
-## Notes
-- Known host keys are enforced; ensure your hosts are in `~/.ssh/known_hosts`.
-- Credentials are stored securely in the macOS Keychain when available.
-- System monitor uses `/proc` data (best on Linux targets).
+## Privacy
+
+ShadowSSH never phones home. There is no account, no analytics, no auto-update beacon. Credentials live in the OS-native secure store. Connection history stays in your config directory. Your keys never leave your machine.
+
+## Tech stack
+
+C++17 · SDL2 · Dear ImGui (docking) · libssh · libvterm · ImGuiColorTextEdit · CMake.
+
+## About
+
+ShadowSSH is the personal project of **Mattia Beltrami**, Computer Engineering student at **Politecnico di Milano**. Built because the tools available weren't fast or honest enough.
+
+## License
+
+[Apache License 2.0](LICENSE) — free for personal and commercial use.
+
+---
+
+<div align="center">
+
+`#ssh` · `#sftp` · `#terminal` · `#cpp` · `#imgui` · `#sdl2` · `#cross-platform` · `#devtools`
+
+</div>

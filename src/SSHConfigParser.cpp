@@ -60,10 +60,14 @@ std::vector<SSHHost> SSHConfigParser::parse_config_file(const std::string& path)
             else if (keyword == "identityfile") {
                 // Handle tilde expansion if simple
                 if (value.size() > 0 && value[0] == '~') {
-                     const char* home = getenv("HOME");
-                     if (home) {
-                         value.replace(0, 1, home);
-                     }
+#ifdef _WIN32
+                    const char* home = getenv("USERPROFILE");
+#else
+                    const char* home = getenv("HOME");
+#endif
+                    if (home) {
+                        value.replace(0, 1, home);
+                    }
                 }
                 current_host.identity_file = value;
             }

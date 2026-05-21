@@ -75,8 +75,13 @@ void EditorManager::Render(std::function<bool(const std::string& path, const std
             ImGuiTabItemFlags flags = (tabs[i].is_dirty ? ImGuiTabItemFlags_UnsavedDocument : 0);
             
             if (ImGui::BeginTabItem(id.c_str(), &keep_open, flags)) {
-                // Shortcut: Cmd+S to save CURRENT tab
-                if (ImGui::GetIO().KeySuper && ImGui::IsKeyPressed(ImGuiKey_S)) {
+                // Save shortcut: Cmd+S on macOS, Ctrl+S elsewhere.
+#ifdef __APPLE__
+                bool save_mod = ImGui::GetIO().KeySuper;
+#else
+                bool save_mod = ImGui::GetIO().KeyCtrl;
+#endif
+                if (save_mod && ImGui::IsKeyPressed(ImGuiKey_S)) {
                      if (on_save(tabs[i].full_path, tabs[i].editor->GetText())) {
                          MarkSaved(i);
                      }

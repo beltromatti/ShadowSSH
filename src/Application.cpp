@@ -4,30 +4,33 @@
 #include "imgui_internal.h"
 #include "SSHConfigParser.h"
 #include "CredentialStore.h"
-#ifdef __APPLE__
-#include "MacMenu.h"
-#endif
+#include "Platform.h"
 #include <fstream>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 #include <iostream>
 #include <algorithm>
 #include <filesystem>
-#include <pwd.h>
 
 Application::Application() {
-    // Load config
-    const char* home = getenv("HOME");
-    if (home) {
-        std::string config_path = std::string(home) + "/.ssh/config";
-        known_hosts = SSHConfigParser::parse_config_file(config_path);
-        
-        history_path = std::string(home) + "/.shadowssh_history_v2";
-        std::filesystem::path old_history = std::string(home) + "/.shadowssh_history";
-        std::error_code ec;
-        std::filesystem::remove(old_history, ec); // purge legacy cleartext history
-        history_hosts = SSHConfigParser::load_history(history_path);
+    std::string home = Platform::GetHomeDir();
+    if (!home.empty()) {
+        std::filesystem::path config_path = std::filesystem::path(home) / ".ssh" / "config";
+        known_hosts = SSHConfigParser::parse_config_file(config_path.string());
     }
+
+    std::filesystem::path config_dir = Platform::GetConfigDir();
+    history_path = (config_dir / "history.v2").string();
+
+    if (!home.empty()) {
+        // Purge legacy cleartext history files from older builds.
+        std::error_code ec;
+        std::filesystem::remove(std::filesystem::path(home) / ".shadowssh_history", ec);
+        std::filesystem::remove(std::filesystem::path(home) / ".shadowssh_history_v2", ec);
+    }
+
+    history_hosts = SSHConfigParser::load_history(history_path);
 }
 
 Application::~Application() {
@@ -49,7 +52,11 @@ bool Application::Init() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io.ConfigMacOSXBehaviors = false; // Use Ctrl for shortcuts to match requested behavior
+#ifdef __APPLE__
+    io.ConfigMacOSXBehaviors = true;  // Cmd-based shortcuts on macOS
+#else
+    io.ConfigMacOSXBehaviors = false; // Ctrl-based shortcuts on Win/Linux
+#endif
 
     ApplyDarkTheme();
     
@@ -119,21 +126,6 @@ void Application::Run() {
             if (event.type == SDL_QUIT) running = false;
              if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
                 running = false;
-#ifdef __APPLE__
-            if (event.type == SDL_USEREVENT) {
-                switch (event.user.code) {
-                    case MacMenu_Launch: LaunchNativeTerminal(); break;
-                    case MacMenu_Relaunch: LaunchNativeTerminal(); break;
-                    case MacMenu_Clear: terminal.ClearScrollback(); break;
-                    case MacMenu_Reset: terminal.Reset(); shell_ready = false; break;
-                    case MacMenu_SendCtrlC: sshClient.send_shell_command("\x03"); break;
-                    case MacMenu_SendCtrlZ: sshClient.send_shell_command("\x1A"); break;
-                    case MacMenu_SendCtrlD: sshClient.send_shell_command("\x04"); break;
-                    case MacMenu_SendCtrlX: sshClient.send_shell_command("\x18"); break;
-                    case MacMenu_SendCtrlO: sshClient.send_shell_command("\x0F"); break;
-                }
-            }
-#endif
         }
 
         ImGui_ImplSDLRenderer2_NewFrame();
@@ -141,18 +133,13 @@ void Application::Run() {
         // No Cmd remap: Ctrl remains the modifier for copy/paste/save
         ImGui::NewFrame();
 
-#ifndef __APPLE__
-        // Fallback menu bar for non-macOS
+        // Cross-platform ImGui menu bar (works identically on Mac/Linux/Windows).
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("Terminal")) {
-                if (!terminal_launched) {
-                    if (ImGui::MenuItem("Launch Native Terminal")) {
-                        LaunchNativeTerminal();
-                    }
-                } else {
-                    if (ImGui::MenuItem("Relaunch Native Terminal")) {
-                        LaunchNativeTerminal();
-                    }
+                const char* launch_label = terminal_launched ? "Relaunch Native Terminal"
+                                                              : "Launch Native Terminal";
+                if (ImGui::MenuItem(launch_label, nullptr, false, state == AppState::CONNECTED)) {
+                    LaunchNativeTerminal();
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Clear In-App Terminal")) {
@@ -162,28 +149,16 @@ void Application::Run() {
                     terminal.Reset();
                     shell_ready = false;
                 }
-                if (ImGui::MenuItem("Send Ctrl+C to Shell")) {
-                    sshClient.send_shell_command("\x03");
-                }
-                if (ImGui::MenuItem("Send Ctrl+Z to Shell")) {
-                    sshClient.send_shell_command("\x1A");
-                }
-                if (ImGui::MenuItem("Send Ctrl+D to Shell")) {
-                    sshClient.send_shell_command("\x04");
-                }
-                if (ImGui::MenuItem("Send Ctrl+X to Shell")) {
-                    sshClient.send_shell_command("\x18");
-                }
-                if (ImGui::MenuItem("Send Ctrl+O to Shell")) {
-                    sshClient.send_shell_command("\x0F");
-                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Send Ctrl+C")) sshClient.send_shell_command("\x03");
+                if (ImGui::MenuItem("Send Ctrl+Z")) sshClient.send_shell_command("\x1A");
+                if (ImGui::MenuItem("Send Ctrl+D")) sshClient.send_shell_command("\x04");
+                if (ImGui::MenuItem("Send Ctrl+X")) sshClient.send_shell_command("\x18");
+                if (ImGui::MenuItem("Send Ctrl+O")) sshClient.send_shell_command("\x0F");
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
         }
-#else
-        Mac_CreateOrUpdateTerminalMenu(terminal_launched);
-#endif
 
         // Dockspace
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
@@ -305,7 +280,7 @@ void Application::RenderLogin() {
     } else {
         if (ImGui::Button("Connect", ImVec2(-1, 40))) {
              sshClient.connect(host_input, atoi(port_input));
-             sprintf(status_msg, "Connecting to %s...", host_input);
+             snprintf(status_msg, sizeof(status_msg), "Connecting to %s...", host_input);
         }
     }
 
@@ -365,11 +340,7 @@ void Application::RenderWorkspace() {
 }
 
 static std::string PickLocalFile() {
-#ifdef __APPLE__
-    return Mac_ShowOpenFilePanel();
-#else
-    return "";
-#endif
+    return Platform::OpenFileDialog();
 }
 
 static std::string JoinPath(const std::string& base, const std::string& name) {
@@ -380,11 +351,10 @@ static std::string JoinPath(const std::string& base, const std::string& name) {
 }
 
 static std::string PickDownloadPath(const std::string& filename, const std::string& home) {
-#ifdef __APPLE__
     std::string initial_dir = home.empty() ? "" : (std::filesystem::path(home) / "Downloads").string();
-    std::string chosen = Mac_ShowSaveFilePanel(filename, initial_dir);
+    std::string chosen = Platform::SaveFileDialog(filename, initial_dir);
     if (!chosen.empty()) return chosen;
-#endif
+
     if (home.empty()) return filename;
     std::filesystem::path downloads_dir = std::filesystem::path(home) / "Downloads";
     std::error_code ec;
@@ -393,11 +363,7 @@ static std::string PickDownloadPath(const std::string& filename, const std::stri
 }
 
 static std::string GetHomePath() {
-    const char* home_env = getenv("HOME");
-    if (home_env && *home_env) return std::string(home_env);
-    struct passwd* pw = getpwuid(getuid());
-    if (pw && pw->pw_dir) return std::string(pw->pw_dir);
-    return "";
+    return Platform::GetHomeDir();
 }
 
 void Application::RenderFileBrowser() {
@@ -609,12 +575,10 @@ void Application::SaveFile() {
 }
 
 void Application::LaunchNativeTerminal() {
-    std::string ssh_cmd = "ssh " + std::string(user_input) + "@" + std::string(host_input) + " -p " + std::string(port_input);
-    if (strlen(key_path_input) > 0) {
-        ssh_cmd += " -i " + std::string(key_path_input);
+    if (Platform::LaunchNativeSshTerminal(user_input, host_input, port_input, key_path_input)) {
+        terminal_launched = true;
+    } else {
+        snprintf(status_msg, sizeof(status_msg),
+                 "Could not launch a native terminal on this system.");
     }
-
-    std::string osascript_cmd = "osascript -e 'tell application \"Terminal\" to do script \"" + ssh_cmd + "\"' -e 'tell application \"Terminal\" to activate'";
-    system(osascript_cmd.c_str());
-    terminal_launched = true;
 }

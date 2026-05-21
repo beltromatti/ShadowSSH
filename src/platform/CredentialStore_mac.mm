@@ -1,3 +1,5 @@
+#ifdef __APPLE__
+
 #include "CredentialStore.h"
 #include <Security/Security.h>
 #include <vector>
@@ -109,3 +111,5 @@ void Delete(const SSHHost& host) {
 }
 
 } // namespace CredentialStore
+
+#endif

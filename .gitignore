@@ -1,12 +1,76 @@
+# ---------- Build artefacts -----------------------------------------------
 build/
-.DS_Store
-.vscode/
+build-*/
+out/
+dist/
+cmake-build-*/
+release/
+artifacts/
 *.app/
-*.log
-*.user
+*.dmg
+*.zip
+*.tar
+*.tar.gz
+*.exe
+*.dll
+*.so
+*.dylib
+*.lib
+*.a
+*.o
+*.obj
+*.exp
+*.pdb
+*.ilk
+
+# ---------- CMake generated -----------------------------------------------
 CMakeCache.txt
 CMakeFiles/
-Makefile
+CMakeScripts/
+CTestTestfile.cmake
 cmake_install.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+Testing/
+
+# ---------- Editors / IDEs -------------------------------------------------
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.code-workspace
+.cache/
+.clangd/
+.clang-tidy
+
+# ---------- OS noise -------------------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+__MACOSX/
+*~
+*.swp
+*.swo
+
+# ---------- Logs / runtime state ------------------------------------------
+*.log
+*.tmp
 .shadowssh_history
 .shadowssh_history_v2
+imgui.ini
+
+# ---------- Third-party / package managers --------------------------------
+vcpkg_installed/
+.vcpkg-root
+node_modules/
+
+# ---------- Secrets --------------------------------------------------------
+.env
+.env.*
+*.pem
+*.key
+!packaging/**/*.key

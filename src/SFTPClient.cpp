@@ -1,8 +1,7 @@
 #include "SFTPClient.h"
-#include <iostream>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <fstream>
+#include <iostream>
 
 SFTPClient::SFTPClient() {}
 
@@ -136,8 +135,8 @@ bool SFTPClient::download_file(const std::string& remote_path, const std::string
         return false;
     }
 
-    int fd = ::open(local_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd < 0) {
+    std::ofstream out(local_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
         sftp_close(file);
         if (session_mutex) session_mutex->unlock();
         return false;
@@ -147,15 +146,12 @@ bool SFTPClient::download_file(const std::string& remote_path, const std::string
     ssize_t nread = 0;
     bool ok = true;
     while ((nread = sftp_read(file, buffer, sizeof(buffer))) > 0) {
-        ssize_t written = ::write(fd, buffer, nread);
-        if (written != nread) {
-            ok = false;
-            break;
-        }
+        out.write(buffer, nread);
+        if (!out) { ok = false; break; }
     }
     if (nread < 0) ok = false;
 
-    ::close(fd);
+    out.close();
     sftp_close(file);
     if (session_mutex) session_mutex->unlock();
     return ok;
