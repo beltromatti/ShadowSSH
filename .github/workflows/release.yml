@@ -75,7 +75,7 @@ jobs:
         if: matrix.os == 'windows'
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'c82f74667287d3dc386bce81e44964370c91a289'
+          vcpkgGitCommitId: '1ea949145db9db7c9b254062f94acdaeed947767'
           runVcpkgInstall: false
 
       - name: Windows build + package
