@@ -81,6 +81,8 @@ jobs:
       - name: Windows build + package
         if: matrix.os == 'windows'
         shell: pwsh
+        env:
+          VCPKG_BINARY_SOURCES: 'clear'
         run: |
           $version = "${{ steps.ver.outputs.version }}"
           $build = "build/windows-x64"
